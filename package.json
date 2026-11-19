@@ -10,7 +10,7 @@
   "author": "Jamison",
   "license": "AGPL-3.0-only",
   "dependencies": {
-    "jszip": "3.10.1",
+    "jszip": "3.10.2",
     "meshoptimizer": "0.22.0",
     "ws": "8.18.0"
   },
