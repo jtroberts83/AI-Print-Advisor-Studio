@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.39.1
+- Security hardening (code scanning alert): the print report and certificates only show pictures that are image data made by the app, escaped, never other text put into the page.
+
 ## 2.39.0
 - **Print report** (Print history → 📄 Print report…): a window with a report of your prints, to print or save as a
   PDF. Pick the prints by date, printer, status and name (e.g. “ornament”), untick any to leave out, and give it a

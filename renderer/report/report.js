@@ -35,6 +35,8 @@
     if (!j.filamentMm) return 0;
     return plannedMm ? planned * Math.min(1, j.filamentMm / plannedMm) : planned;
   }
+  // pictures only as image data: URLs (made by this app), never anything else put into the page
+  const safeImg = (u) => typeof u === 'string' && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(u);
   const kg = (g) => (g >= 1000 ? `${(g / 1000).toFixed(2)} kg` : `${Math.round(g)} g`);
   const ruler = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg>';
 
@@ -70,7 +72,7 @@
   }
   function thumbHtml(j, cls = 'th') {
     const t = R.thumbs.get(j.id);
-    return t ? `<img class="${cls}" src="${t}" alt="">` : `<span class="${cls} none" aria-hidden="true"></span>`;
+    return safeImg(t) ? `<img class="${cls}" src="${esc(t)}" alt="">` : `<span class="${cls} none" aria-hidden="true"></span>`;
   }
 
   function render() {
@@ -340,7 +342,7 @@
       ['Strength', [walls && `${walls} walls`, infill && `${infill} ${String(pattern || '').toLowerCase()} infill`].filter(Boolean).join(' · ')],
     ].filter(([, v]) => v);
     const no = `No. ${(j.start ? j.start.slice(0, 10).replace(/-/g, '') : '0')}-${(rng(j.id)() * 1e6 | 0).toString().padStart(6, '0')}`;
-    const photo = C.photo || R.thumbs.get(j.id);
+    const photo = [C.photo, R.thumbs.get(j.id)].find(safeImg) || null;
     const fit = C.photo ? (f.fit === 'contain' ? 'contain' : 'cover') : 'contain';
     const year = (j.end || j.start || new Date().toISOString()).slice(0, 4);
     return `<div class="cert t-${t}">
@@ -348,7 +350,7 @@
       <div class="paper">
         <header class="chead"><div class="kicker">${esc(tp.kicker)}</div><h1>${tp.letters ? rainbowText(tp.title, tp.letters) : esc(tp.title)}</h1></header>
         <div class="cbody">
-          <figure class="cphoto ${photo ? '' : 'none'}">${photo ? `<img src="${photo}" alt="" style="object-fit:${fit};object-position:50% ${Number.isFinite(+f.posY) ? +f.posY : 50}%">` : '<span>Add a photo</span>'}
+          <figure class="cphoto ${photo ? '' : 'none'}">${photo ? `<img src="${esc(photo)}" alt="" style="object-fit:${fit};object-position:50% ${Number.isFinite(+f.posY) ? +f.posY : 50}%">` : '<span>Add a photo</span>'}
             ${colors.length ? `<figcaption>${colors.map((x) => `<span class="sw" style="background:${esc(x.color)}"></span>`).join('')}</figcaption>` : ''}</figure>
           <div class="cinfo">
             <div class="intro">${esc(tp.intro)}</div>
