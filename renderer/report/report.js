@@ -110,7 +110,7 @@
         <td class="tcell">${thumbHtml(j)}</td>
         <td><div class="nm">${esc(nameOf(j))}</div><div class="muted small">${esc(j.printer)} · ${esc(dtStr(j.start))}</div>
           <div class="cmp">${ruler}${esc(cmpText(j))}</div>
-          <button class="btn certbtn noprint" data-cert="${esc(j.id)}" title="A printable certificate for this print, with a photo, To and From">🏅 Certificate…</button></td>
+          ${j.status === 'completed' ? `<button class="btn certbtn noprint" data-cert="${esc(j.id)}" title="A printable certificate for this print, with a photo, To and From">🏅 Certificate…</button>` : ''}</td>
         <td><span class="st ${st}">${STATUS_LABEL[st]}</span>${j.rating ? `<div class="muted small">Rated: ${esc({ good: 'Good', issues: 'Had issues', failed: 'Failed' }[j.rating.rating] || '')}</div>` : ''}</td>
         <td class="num">${live(j) ? 'in progress' : esc(hm(j.printSeconds))}${j.estimatedSeconds ? `<div class="muted small">planned ${esc(hm(j.estimatedSeconds))}</div>` : ''}</td>
         <td class="num">${live(j) ? (plannedM(j) ? `<span class="muted">planned</span><br>${plannedM(j).toFixed(2)} m${plannedG(j) ? `<div class="muted small">≈ ${esc(kg(plannedG(j)))}</div>` : ''}` : '—')
@@ -622,7 +622,9 @@
   // Print history → 🏅 Certificate…: straight to that print's certificate (when the window opens, or while it's open)
   function certFor(id) {
     if (!R.jobs.length) { R.pendingCert = id; return; }
-    if (R.jobs.some((j) => j.id === id)) openCert(id);
+    const j = R.jobs.find((x) => x.id === id);
+    if (j && j.status !== 'completed') status('Certificates are for finished prints: this one isn’t completed.');
+    else if (j) openCert(id);
     else status('That print is further back than the history read here: pick more under History.');
   }
   { const m = /^#cert=(.+)$/.exec(location.hash); if (m) { R.pendingCert = decodeURIComponent(m[1]); history.replaceState(null, '', location.pathname); } }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.40.2
+- Print report: **🏅 Certificate…** shows only on completed prints (as in Print history), not on cancelled, failed
+  or still printing ones.
+
 ## 2.40.1
 - Certificates: **AI ideas** now go through the app's single Anthropic request (the same one the rest of the app
   uses), so errors read the same everywhere and spending is always counted.
