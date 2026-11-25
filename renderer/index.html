@@ -208,7 +208,14 @@
         <div id="compareBody"></div>
       </div>
       <div class="tabpane hidden" id="tab-history">
-        <div class="history-head"><p class="hint" id="historyHint">Prints from your U1s. Rate them so future recommendations learn what worked.</p><button class="btn" id="historyStats" title="Success rate, filament used and wasted (and its cost), each printer’s cancel and fail rate, and graphs of every print">📊 Print stats…</button><button class="btn" id="historyReport" title="A summary of your prints (time, filament, status), or a detailed report with each print’s settings, to print or save as a PDF">📄 Print report…</button><button class="btn" id="historyRefresh">Refresh</button></div>
+        <div class="history-head">
+          <p class="hint" id="historyHint">Prints from your U1s. Rate them so future recommendations learn what worked.</p>
+          <div class="history-actions">
+            <button class="btn primary" id="historyStats" title="Success rate, filament used and wasted (and its cost), each printer’s cancel and fail rate, and graphs of every print">📊 Stats…</button>
+            <button class="btn primary" id="historyReport" title="A summary of your prints (time, filament, status), or a detailed report with each print’s settings, to print or save as a PDF">📄 Report…</button>
+            <button class="btn" id="historyRefresh" title="Read the print history from your printers again">↻ Refresh</button>
+          </div>
+        </div>
         <div class="history-filter" id="historyFilter" hidden>
           <select id="historyStatus" aria-label="Show prints by status">
             <option value="">All prints</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option><option value="printing">Printing now</option>

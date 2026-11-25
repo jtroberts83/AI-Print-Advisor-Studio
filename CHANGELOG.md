@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.41.1
+- Print history: **📊 Stats…**, **📄 Report…** and **↻ Refresh** sit in one row under the note, as clear teal
+  buttons (they were squeezed beside the note, with their names broken over two lines).
+
 ## 2.41.0
 - **📊 Print stats…** on the Print history tab: a window with how your prints went, across all your printers.
   - The share of finished prints that **completed**, were **cancelled** or **failed**.
