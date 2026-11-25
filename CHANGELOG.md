@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.40.1
+- Certificates: **AI ideas** now go through the app's single Anthropic request (the same one the rest of the app
+  uses), so errors read the same everywhere and spending is always counted.
+- Certificates: saved AI ideas keep only the names and sayings. Ideas saved with 2.40.0 aren't shown again; click
+  **AI ideas** to get new ones.
+- Security: code scanning alerts closed.
+
 ## 2.40.0
 - Certificates: **✨ AI ideas**. Claude looks at the model (the slicer's picture and your photo) and suggests 8 fun
   names (a grand title like “Sir Toothless the Very Brave”, cute, punny, epic, funny and simple ones) and 6 short
