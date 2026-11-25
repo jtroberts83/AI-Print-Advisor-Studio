@@ -64,6 +64,11 @@ const TOUR_DATA = require('fs').existsSync(path.join(__dirname, 'demo', 'recordi
 let DEMO = false;   // this run is the tour
 // For testing only: run against a separate data folder so a test never touches your settings or filament.
 if (process.env.AIPA_USER_DATA) app.setPath('userData', process.env.AIPA_USER_DATA);
+// a test copy (its launcher sets AIPA_TEST_LABEL): every window's title says so, to tell it from the real app
+if (process.env.AIPA_TEST_LABEL) app.on('browser-window-created', (_e, w) => {
+  const label = String(process.env.AIPA_TEST_LABEL).slice(0, 40);
+  w.on('page-title-updated', (ev, t) => { ev.preventDefault(); w.setTitle(`${t} [${label}]`); });
+});
 
 let win;
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
