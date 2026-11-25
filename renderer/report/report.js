@@ -488,7 +488,7 @@
   }
   // ✨ AI ideas: names and sayings from Claude (kept per print in this window's storage)
   // (names and sayings only: nothing private)
-  const IDEAS_SLOT = 'aipa.certIdeas';
+  const IDEAS_SLOT = 'aipa.giftIdeas';
   const ideasStore = () => { try { return JSON.parse(localStorage.getItem(IDEAS_SLOT) || '{}'); } catch { return {}; } };
   function saveIdeas() {
     try {
@@ -511,7 +511,7 @@
     }
     const prev = C.ideas || { names: [], sayings: [] };
     try {
-      const r = await api.certIdeas(C.job.id, { photo, template: tplKey(C.fields.template), to: C.fields.to, from: C.fields.from, avoid: [...prev.names.map((n) => n.name), ...prev.sayings] });
+      const r = await api.giftIdeas(C.job.id, { photo, template: tplKey(C.fields.template), to: C.fields.to, from: C.fields.from, avoid: [...prev.names.map((n) => n.name), ...prev.sayings] });
       const seen = new Set(prev.names.map((n) => n.name.toLowerCase()));
       C.ideas = { what: r.what || prev.what, names: [...r.names.filter((n) => !seen.has(n.name.toLowerCase())), ...prev.names].slice(0, 24),
         sayings: [...r.sayings.filter((x) => !prev.sayings.includes(x)), ...prev.sayings].slice(0, 18), spent: (prev.spent || 0) + (r.usd || 0) };
