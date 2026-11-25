@@ -285,6 +285,8 @@
     im.src = src;
     return null;
   }
+  // only one of the template names above, never anything else typed or saved
+  const tplKey = (k) => (typeof k === 'string' && Object.prototype.hasOwnProperty.call(TEMPLATES, k) ? k : 'fancy');
   const C = { job: null, fields: {}, photo: null, camera: [], detail: null, openedAt: 0, qr: false, phone: [], saveT: 0 };
 
   // a stable pseudo-random sequence per print, so decorations don't jump around between renders
@@ -337,7 +339,7 @@
   }
 
   function certHtml() {
-    const j = C.job, f = C.fields, t = TEMPLATES[f.template] ? f.template : 'fancy', tp = TEMPLATES[t];
+    const j = C.job, f = C.fields, t = tplKey(f.template), tp = TEMPLATES[t];
     const name = (f.name || '').trim() || nameOf(j);
     const d = C.detail && !C.detail.error ? C.detail : null;
     const sec = (id, key) => { const s = d && d.sections.find((x) => x.id === id); const i = s && s.items.find((x) => x.key === key); return i ? i.value : ''; };
@@ -366,7 +368,7 @@
     // the frame takes the picture's own shape (no white bars): its width ÷ height, once the picture is measured
     const ar = photo && photoRatio(photo);
     const year = (j.end || j.start || new Date().toISOString()).slice(0, 4);
-    return `<div class="cert t-${t}">
+    return `<div class="cert t-${esc(t)}">
       ${decoSvg(t, j.id)}
       <div class="paper">
         <header class="chead"><div class="kicker">${esc(tp.kicker)}</div><h1>${tp.letters ? rainbowText(tp.title, tp.letters) : esc(tp.title)}</h1></header>
@@ -422,13 +424,13 @@
   addEventListener('resize', () => { if (C.job) fitCert(); });
 
   function certControls() {
-    const f = C.fields, cur = TEMPLATES[f.template] ? f.template : 'fancy';
+    const f = C.fields, cur = tplKey(f.template);
     const waiting = C.phone.filter((p) => p.purpose === 'cert' && p.state === 'waiting').slice(0, 6);
     $('certControls').innerHTML = `
       <div class="row"><button class="btn" id="certBack">← Back to the report</button><span class="ctitle">Certificate for <b>${esc(nameOf(C.job))}</b></span>
         <span class="grow"></span><button class="btn" id="certPrint">🖨 Print…</button><button class="btn primary" id="certPdf">Save as PDF…</button></div>
       <div class="row tpls" role="radiogroup" aria-label="Template">${Object.entries(TEMPLATES).map(([k, v]) =>
-        `<label class="tpl t-${k} ${k === cur ? 'on' : ''}"><input type="radio" name="tpl" value="${k}" ${k === cur ? 'checked' : ''}><span class="dot"></span>${esc(v.label)}</label>`).join('')}</div>
+        `<label class="tpl t-${esc(k)} ${k === cur ? 'on' : ''}"><input type="radio" name="tpl" value="${esc(k)}" ${k === cur ? 'checked' : ''}><span class="dot"></span>${esc(v.label)}</label>`).join('')}</div>
       <div class="row">
         <label class="grow">Name <input id="cName" type="text" maxlength="80" placeholder="${esc(nameOf(C.job))}" value="${esc(f.name || '')}"></label>
         <label class="grow">${esc(TEMPLATES[cur].to)} <input id="cTo" type="text" maxlength="80" value="${esc(f.to || '')}"></label>
@@ -441,8 +443,11 @@
         <label class="btn">🖼 Choose a photo…<input id="cFile" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
         <button class="btn" id="cPhone">📱 ${C.qr ? 'Hide the QR code' : 'Take one with your phone'}</button>
         ${C.camera.length ? `<button class="btn" id="cCam" title="The Print Monitor’s photo from the printer’s camera, taken at 99 %">📷 Printer camera photo</button>` : ''}
+        ${C.photo ? `<button class="btn" id="cTouch" title="Exposure, contrast, colors, sharpening, background removal: preview first, then use it">🎨 Touch up photo</button>` : ''}
+        ${C.original ? `<button class="link" id="cUndo">Undo touch up</button>` : ''}
         ${C.photo ? `<button class="link" id="cNoPhoto">Use the slicer picture instead</button>` : ''}
       </div>
+      ${ideasHtml()}
       ${waiting.length ? `<div class="row phonewait"><span class="muted small">From your phone (click to use):</span>${waiting.map((p) => `<button class="pw" data-pw="${esc(p.id)}" title="${esc(new Date(p.at).toLocaleString())} · ${esc(p.device)}"><img data-pthumb="${esc(p.id)}" alt="Phone photo"></button>`).join('')}</div>` : ''}
       <div id="cQr" class="qr ${C.qr ? '' : 'hidden'}"></div>
       <div class="status" id="cStatus" role="status" aria-live="polite"></div>`;
@@ -451,16 +456,73 @@
   }
   const cstatus = (t) => { const el = $('cStatus'); if (el) el.textContent = t; };
 
-  function saveFields(photo) {
+  function saveFields(photo, original) {
     clearTimeout(C.saveT);
-    const run = () => api.certSet(C.job.id, C.fields, photo).catch((e) => cstatus(`Couldn’t save: ${e.message || e}`));
-    if (photo !== undefined) return run();
+    const run = () => api.certSet(C.job.id, C.fields, photo, original).catch((e) => cstatus(`Couldn’t save: ${e.message || e}`));
+    if (photo !== undefined || original !== undefined) return run();
     C.saveT = setTimeout(run, 400);
   }
+  // a new photo: any touch up belongs to the old one
   async function setPhoto(dataUrl) {
-    C.photo = dataUrl;
-    await saveFields(dataUrl);
+    C.photo = dataUrl; C.original = null; C.fields.edit = null;
+    await saveFields(dataUrl, null);
     certControls(); renderCert();
+  }
+  // 🎨 Touch up: always from the original photo, starting from the last settings
+  async function touchUp() {
+    if (!C.photo || !window.PhotoEdit) return;
+    const certEl = $('cert').querySelector('.cert');
+    const paper = certEl ? getComputedStyle(certEl).getPropertyValue('--c-bg').trim() || '#ffffff' : '#ffffff';
+    const r = await window.PhotoEdit.open({ src: C.original || C.photo, params: C.fields.edit, paper });
+    if (!r) return;
+    if (!C.original) C.original = C.photo;
+    C.photo = r.dataUrl; C.fields.edit = r.params;
+    await saveFields(C.photo, C.original);
+    certControls(); renderCert(); cstatus('✓ Touched up. “Undo touch up” brings the original back.');
+  }
+  async function undoTouchUp() {
+    if (!C.original) return;
+    C.photo = C.original; C.original = null; C.fields.edit = null;
+    await saveFields(C.photo, null);
+    certControls(); renderCert(); cstatus('The original photo is back.');
+  }
+  // ✨ AI ideas: names and sayings from Claude (kept per print in this window's storage)
+  const IDEAS_KEY = 'aipa.certIdeas';
+  const ideasStore = () => { try { return JSON.parse(localStorage.getItem(IDEAS_KEY) || '{}'); } catch { return {}; } };
+  function saveIdeas() { try { const all = ideasStore(); all[C.job.id] = C.ideas; const keys = Object.keys(all); for (const k of keys.slice(0, Math.max(0, keys.length - 60))) delete all[k]; localStorage.setItem(IDEAS_KEY, JSON.stringify(all)); } catch {} }
+  async function askIdeas() {
+    if (C.ideasBusy) return;
+    C.ideasBusy = true; C.ideasErr = ''; certControls();
+    let photo = null;
+    if (C.photo) {
+      try {
+        const im = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = C.photo; });
+        const k = Math.min(1, 1024 / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement('canvas');
+        c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); photo = c.toDataURL('image/jpeg', 0.85);
+      } catch {}
+    }
+    const prev = C.ideas || { names: [], sayings: [] };
+    try {
+      const r = await api.certIdeas(C.job.id, { photo, template: tplKey(C.fields.template), to: C.fields.to, from: C.fields.from, avoid: [...prev.names.map((n) => n.name), ...prev.sayings] });
+      const seen = new Set(prev.names.map((n) => n.name.toLowerCase()));
+      C.ideas = { what: r.what || prev.what, names: [...r.names.filter((n) => !seen.has(n.name.toLowerCase())), ...prev.names].slice(0, 24),
+        sayings: [...r.sayings.filter((x) => !prev.sayings.includes(x)), ...prev.sayings].slice(0, 18), spent: (prev.spent || 0) + (r.usd || 0) };
+      saveIdeas();
+    } catch (e) { C.ideasErr = String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); }
+    C.ideasBusy = false; certControls();
+  }
+  function ideasHtml() {
+    const ai = C.ai || {}, i = C.ideas;
+    const cost = ai.usd != null ? `about ${ai.usd < 0.01 ? '1' : Math.round(ai.usd * 100)}¢` : '';
+    const btn = ai.tour ? '' : ai.hasKey
+      ? `<button class="btn" id="cIdeas" ${C.ideasBusy ? 'disabled' : ''} title="Claude looks at the model and suggests fun names and short sayings. Uses your API key.">${C.ideasBusy ? '<span class="spin"></span> Thinking up ideas…' : i ? '✨ More ideas' : '✨ AI ideas: fun names and sayings'}</button><span class="muted small">${cost}${cost ? ' each time, with your API key' : ''}</span>`
+      : '<span class="muted small">✨ AI name and saying ideas: add your Anthropic API key in Settings (main window) to use them.</span>';
+    return `<div class="row ideas">${btn}${C.ideasErr ? `<span class="warn small">${esc(C.ideasErr)}</span>` : ''}</div>
+      ${i ? `<div class="ideabox">${i.what ? `<div class="muted small">Claude thinks this is ${esc(i.what)}. Click an idea to use it.</div>` : ''}
+        <div class="chips"><span class="lbl small">Names</span>${i.names.map((n) => `<button class="chip" data-name="${esc(n.name)}" title="${esc(n.style)}">${esc(n.name)}</button>`).join('')}</div>
+        <div class="chips"><span class="lbl small">Sayings</span>${i.sayings.map((x) => `<button class="chip say" data-say="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+        ${i.spent ? `<div class="muted small">Spent on ideas for this print: $${i.spent.toFixed(3)}</div>` : ''}</div>` : ''}`;
   }
   // a photo from this PC: made smaller (2400 px on the long side, JPEG), which also drops its location data
   async function shrinkPhoto(file) {
@@ -495,8 +557,9 @@
 
   async function openCert(jobId) {
     const j = R.jobs.find((x) => x.id === jobId); if (!j) return;
-    Object.assign(C, { job: j, fields: {}, photo: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false });
-    try { const g = await api.certGet(j.id); C.fields = g.fields || {}; C.photo = g.photo; C.camera = g.camera || []; } catch (e) { status(String(e.message || e)); }
+    Object.assign(C, { job: j, fields: {}, photo: null, original: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false, ideas: ideasStore()[j.id] || null, ideasErr: '', ideasBusy: false });
+    try { const g = await api.certGet(j.id); C.fields = g.fields || {}; C.photo = g.photo; C.original = g.original || null; C.camera = g.camera || []; } catch (e) { status(String(e.message || e)); }
+    if (!C.ai && api.certAiInfo) C.ai = await api.certAiInfo().catch(() => null);
     try { C.phone = await api.tsPhotosList(); } catch { C.phone = []; }
     document.body.classList.add('cert-mode');
     $('certControls').hidden = false; $('cert').hidden = false;
@@ -529,6 +592,11 @@
     else if (b.id === 'cPhone') { C.qr = !C.qr; certControls(); }
     else if (b.id === 'cCam') { const u = await api.certCameraPhoto(C.job.id, C.camera[0].id).catch(() => null); if (u) { await setPhoto(u); cstatus('✓ The printer camera’s photo is on the certificate.'); } else cstatus('That camera photo isn’t on this PC anymore.'); }
     else if (b.id === 'cNoPhoto') { await setPhoto(null); }
+    else if (b.id === 'cTouch') touchUp();
+    else if (b.id === 'cUndo') undoTouchUp();
+    else if (b.id === 'cIdeas') askIdeas();
+    else if (b.dataset.name != null) { C.fields.name = b.dataset.name; $('cName').value = b.dataset.name; saveFields(); renderCert(); }
+    else if (b.dataset.say != null) { C.fields.message = b.dataset.say; $('cMsg').value = b.dataset.say; saveFields(); renderCert(); }
     else if (b.dataset.pw) usePhonePhoto(b.dataset.pw);
     else if (b.id === 'certPrint') { const r = await api.reportPrint({ landscape: true }); if (r && r !== true) cstatus(`Not printed: ${r}`); }
     else if (b.id === 'certPdf') {

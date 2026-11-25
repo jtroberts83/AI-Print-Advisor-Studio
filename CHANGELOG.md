@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.40.0
+- Certificates: **✨ AI ideas**. Claude looks at the model (the slicer's picture and your photo) and suggests 8 fun
+  names (a grand title like “Sir Toothless the Very Brave”, cute, punny, epic, funny and simple ones) and 6 short
+  sayings that suit the template (Christmas, birthday, kids…). Click one to use it; **More ideas** asks for new
+  ones. The cost is shown first (a few cents each time, with your API key) and is counted under “Certificates: AI
+  ideas” in the AI spending list. The ideas are kept with the print.
+- Certificates: **🎨 Touch up photo**, with a live preview and sliders for exposure, contrast, saturation, warmth,
+  hue and sharpening. **✨ Auto-fix** sets the sliders from the photo's own brightness and colors; **Hold to
+  compare** shows the original. **Remove the background** finds the background from the photo's edges (it picks
+  its own strength, which you can change) and puts white, the certificate's paper color or a soft studio backdrop
+  behind the model. Your original photo is kept: touch it up again or **Undo touch up** any time. All done on this
+  PC.
+- Security: certificate templates are checked by exact name (code scanning).
+
 ## 2.39.1
 - **🏅 Certificate…** on each completed print in the **Print history** tab: opens the certificate for that print straight away.
 - Certificates: a long name or message gets smaller type to fit, instead of pushing other lines off the page.

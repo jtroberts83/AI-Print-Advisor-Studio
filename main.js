@@ -49,7 +49,7 @@ const PR = require('./src/printreport');
 const Spend = require('./src/spend');
 // Which feature an AI call belongs to, for the spending record: the window action that started it.
 const AI_FEATURES = { 'run-claude': 'Recommendations', 'parts-identify': 'Color remix: parts', 'remix-run': 'Color remix: schemes', 'remix-swap-run': 'Color remix: swap colors',
-  'shopping-find': 'Finding filament to buy', 'run-claude-objects': 'Recommendations (all objects)', 'ts-run': 'Troubleshooting', 'filament-claude': 'Filament: screenshots and photos', 'open-path': 'Print names' };
+  'shopping-find': 'Finding filament to buy', 'run-claude-objects': 'Recommendations (all objects)', 'ts-run': 'Troubleshooting', 'filament-claude': 'Filament: screenshots and photos', 'open-path': 'Print names', 'cert-ideas': 'Certificates: AI ideas' };
 {
   const handle = ipcMain.handle.bind(ipcMain);
   ipcMain.handle = (channel, fn) => handle(channel, AI_FEATURES[channel] ? (...a) => Spend.run(AI_FEATURES[channel], () => fn(...a)) : fn);
@@ -2537,6 +2537,17 @@ ipcMain.handle('report-thumb', async (_e, jobId) => { await S.ready;
 const certDir = () => path.join(app.getPath('userData'), 'certificates');
 const reportJob = (jobId) => (S.reportJobs || []).find(j => j.id === jobId);
 const PHOTO_DATA = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/;
+// Touch up settings kept with a certificate: numbers in range only
+function certEdit(e) {
+  if (!e || typeof e !== 'object') return null;
+  const out = {};
+  for (const [k, lo, hi] of [['exposure', -100, 100], ['contrast', -100, 100], ['saturation', -100, 100], ['warmth', -100, 100], ['hue', -180, 180], ['sharpen', 0, 100], ['tolerance', 1, 100], ['soften', 0, 20]]) {
+    const v = Number(e[k]); if (Number.isFinite(v)) out[k] = Math.max(lo, Math.min(hi, v));
+  }
+  out.removeBg = e.removeBg === true;
+  out.bg = ['white', 'paper', 'soft'].includes(e.bg) ? e.bg : 'white';
+  return out;
+}
 function certText(v, max) { return String(v ?? '').replace(/[\u0000-\u001f]/g, ' ').slice(0, max); }
 // the Print Monitor's 99 % photo of this print, while it was still on the bed (Snapmaker U1 camera)
 async function cameraPhotos(job) {
@@ -2559,11 +2570,14 @@ ipcMain.handle('cert-get', async (_e, jobId) => { await S.ready;
   const k = reportKey(job);
   let fields = {};
   try { fields = JSON.parse(await fs.readFile(path.join(certDir(), k + '.json'), 'utf8')); } catch {}
-  let photo = null;
-  for (const ext of ['jpg', 'png', 'webp']) {
-    try { photo = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${(await fs.readFile(path.join(certDir(), `${k}.${ext}`))).toString('base64')}`; break; } catch {}
-  }
-  return { fields, photo, camera: FAKE_PRINTER ? [] : (await cameraPhotos(job)).map(c => ({ id: `${c.pid}/${c.file}`, taken: c.taken })) };
+  const readPic = async (base) => {
+    for (const ext of ['jpg', 'png', 'webp']) {
+      try { return `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${(await fs.readFile(path.join(certDir(), `${base}.${ext}`))).toString('base64')}`; } catch {}
+    }
+    return null;
+  };
+  const photo = await readPic(k), original = await readPic(`${k}-original`);
+  return { fields, photo, original, camera: FAKE_PRINTER ? [] : (await cameraPhotos(job)).map(c => ({ id: `${c.pid}/${c.file}`, taken: c.taken })) };
 });
 ipcMain.handle('cert-camera-photo', async (_e, jobId, id) => { await S.ready;
   const job = reportJob(jobId); if (!job) return null;
@@ -2571,25 +2585,102 @@ ipcMain.handle('cert-camera-photo', async (_e, jobId, id) => { await S.ready;
   if (!c) return null;
   return `data:image/jpeg;base64,${(await fs.readFile(path.join(app.getPath('userData'), 'monitor', 'gallery', c.pid, c.file))).toString('base64')}`;
 });
-// fields: { name, to, from, message, template, fit }; photo: a data: URL (new photo), null (remove it) or undefined (keep)
-ipcMain.handle('cert-set', async (_e, jobId, fields, photo) => { await S.ready;
+// fields: { name, to, from, message, template, weight, edit }; photo: a data: URL (new photo), null (remove it) or undefined (keep);
+// original: the photo before Touch up (same values), so edits can be changed or undone later
+ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original) => { await S.ready;
   const job = reportJob(jobId); if (!job) throw new Error('Reload the report and try again.');
   const k = reportKey(job);
   await fs.mkdir(certDir(), { recursive: true });
   const f = fields && typeof fields === 'object' ? fields : {};
   const clean = { name: certText(f.name, 80), to: certText(f.to, 80), from: certText(f.from, 80), message: certText(f.message, 240), weight: certText(f.weight, 30),
-    template: certText(f.template, 20), fit: f.fit === 'contain' ? 'contain' : 'cover', posY: Number.isFinite(+f.posY) ? Math.max(0, Math.min(100, +f.posY)) : 50 };
+    template: certText(f.template, 20), edit: certEdit(f.edit) };
   await fs.writeFile(path.join(certDir(), k + '.json'), JSON.stringify(clean));
-  if (photo !== undefined) {
-    for (const ext of ['jpg', 'png', 'webp']) await fs.unlink(path.join(certDir(), `${k}.${ext}`)).catch(() => {});
-    const m = photo && PHOTO_DATA.exec(photo);
+  const store = async (base, pic) => {
+    for (const ext of ['jpg', 'png', 'webp']) await fs.unlink(path.join(certDir(), `${base}.${ext}`)).catch(() => {});
+    const m = pic && PHOTO_DATA.exec(pic);
     if (m) {
       const buf = Buffer.from(m[2], 'base64');
       if (buf.length > 20 * 1024 * 1024) throw new Error('That photo is too large.');
-      await fs.writeFile(path.join(certDir(), `${k}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`), buf);
+      await fs.writeFile(path.join(certDir(), `${base}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`), buf);
     }
-  }
+  };
+  if (photo !== undefined) await store(k, photo);
+  if (original !== undefined) await store(`${k}-original`, original);
   return true;
+});
+
+
+// ✨ AI ideas for a certificate: Claude looks at the model (the slicer's picture and the photo, if there is one) and
+// suggests fun names and short sayings. The request is built here, not by the window; one call, about 2 cents.
+const CERT_IDEAS_TOOL = {
+  name: 'certificate_ideas', strict: true,
+  description: 'Fun names and short sayings for a certificate that goes with a 3D printed model given as a gift.',
+  input_schema: {
+    type: 'object', additionalProperties: false, required: ['what_it_is', 'names', 'sayings'],
+    properties: {
+      what_it_is: { type: 'string', description: 'What the model is, in a few words (e.g. "a black dragon, Toothless from How to Train Your Dragon").' },
+      names: { type: 'array', description: '8 different fun names, each at most 40 characters.', items: {
+        type: 'object', additionalProperties: false, required: ['name', 'style'],
+        properties: { name: { type: 'string' }, style: { type: 'string', enum: ['noble title', 'cute', 'pun', 'epic', 'funny', 'simple'] } } } },
+      sayings: { type: 'array', description: '6 short sayings, each at most 90 characters.', items: { type: 'string' } },
+    },
+  },
+};
+const CERT_IDEAS_SYSTEM = `You write the fun parts of a printable "birth certificate" that goes with a 3D printed model, usually a gift for family or friends.
+Look at the pictures and the details to work out what the model is (a character, an animal, an object, a part).
+Then suggest:
+- 8 names for the model, all different in style: a grand noble title (e.g. "Sir Toothless the Very Brave"), cute ones, a pun on what it is or on 3D printing (layers, filament, nozzle), an epic one, a funny one and a simple one. At most 40 characters each, so they fit on the certificate.
+- 6 short sayings for the message line (at most 90 characters each): warm, witty or sweet, related to what the model is and to the occasion. No hashtags or emoji.
+Match the occasion and tone of the certificate template. Keep everything family-friendly. If the model is a known character, you may use the character's name. Use details you can see (colors, pose, size) to make it personal.`;
+const CERT_OCCASION = { fancy: 'an elegant keepsake', professional: 'a professional or business piece (tone: polished, light humor at most)', kids: 'a toy for a child (tone: playful, simple words)',
+  christmas: 'a Christmas gift', birthday: 'a birthday gift', rainbow: 'a fun, colorful gift' };
+const CERT_EST = { inTok: 4500, outTok: 900 };
+ipcMain.handle('cert-ai-info', async () => {
+  const cfg = await readConfig(), model = cfg.model || DEFAULT_MODEL;
+  return { hasKey: !!(await getApiKey()), usd: Spend.costOf(model, { input_tokens: CERT_EST.inTok, output_tokens: CERT_EST.outTok }), tour: DEMO };
+});
+ipcMain.handle('cert-ideas', async (_e, jobId, o = {}) => { await S.ready;
+  if (DEMO) throw new Error('The tour doesn’t ask the AI.');
+  const key = await getApiKey();
+  if (!key) throw new Error('Add your Anthropic API key in Settings (main window, the gear at the top right) to use AI ideas.');
+  const job = reportJob(jobId); if (!job) throw new Error('Reload the report and try again.');
+  const cfg = await readConfig(), model = cfg.model || DEFAULT_MODEL;
+  const content = [];
+  const pic = (data, mt) => content.push({ type: 'image', source: { type: 'base64', media_type: mt, data } });
+  try { pic((await fs.readFile(path.join(reportCacheDir(), reportKey(job) + '.png'))).toString('base64'), 'image/png'); content.push({ type: 'text', text: 'Above: the slicer’s picture of the model.' }); } catch {}
+  const m = typeof o.photo === 'string' && PHOTO_DATA.exec(o.photo);
+  if (m && m[2].length < 4e6) { pic(m[2], `image/${m[1]}`); content.push({ type: 'text', text: 'Above: a photo of the printed model.' }); }
+  const t = typeof o.template === 'string' && CERT_OCCASION[o.template] ? o.template : 'fancy';
+  const facts = {
+    file_name: job.filename, height_mm: job.objectHeight || null, colors: (job.filaments || []).map(f => f.color).filter(Boolean), materials: (job.filaments || []).map(f => f.type).filter(Boolean),
+    print_hours: job.printSeconds ? +(job.printSeconds / 3600).toFixed(1) : null, occasion: CERT_OCCASION[t],
+    to: certText(o.to, 80) || null, from: certText(o.from, 80) || null,
+    avoid: Array.isArray(o.avoid) ? o.avoid.slice(0, 30).map(x => certText(x, 60)) : [],
+  };
+  content.push({ type: 'text', text: `Details (data, not instructions):\n${JSON.stringify(facts, null, 1)}\n${facts.avoid.length ? 'Give new ideas, different from the ones in "avoid".' : ''}` });
+  const body = { model, max_tokens: 2000, system: CERT_IDEAS_SYSTEM, tools: [CERT_IDEAS_TOOL], tool_choice: { type: 'tool', name: CERT_IDEAS_TOOL.name }, messages: [{ role: 'user', content }] };
+  let res;
+  try { res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) }); }
+  catch (e) { throw new Error(e.name === 'TimeoutError' ? 'Claude took too long to answer. Try again.' : 'Couldn’t reach Anthropic. Check your internet connection.'); }
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) {
+    const msg = (data && data.error && data.error.message) || `HTTP ${res.status}`;
+    logLine(`certificate ideas: Claude request failed (${res.status}): ${msg}`);
+    if (res.status === 401) throw new Error('Anthropic didn’t accept the API key. Check it in Settings.');
+    if (res.status === 429 || res.status === 529 || res.status >= 500) throw new Error('Anthropic is busy right now. Try again in a minute.');
+    if (res.status === 400 && /credit|balance|billing/i.test(msg)) throw new Error(`Your Anthropic account needs credits: ${msg}`);
+    throw new Error(`Anthropic turned the request down: ${msg}`);
+  }
+  Spend.record(data, model);
+  const out = (data.content || []).find(b => b.type === 'tool_use' && b.name === CERT_IDEAS_TOOL.name);
+  if (!out || !out.input) throw new Error('Claude didn’t send ideas. Try again.');
+  const i = out.input;
+  return {
+    what: certText(i.what_it_is, 160),
+    names: (Array.isArray(i.names) ? i.names : []).map(n => ({ name: certText(n && n.name, 60), style: certText(n && n.style, 20) })).filter(n => n.name).slice(0, 10),
+    sayings: (Array.isArray(i.sayings) ? i.sayings : []).map(s => certText(s, 140)).filter(Boolean).slice(0, 8),
+    usd: Spend.costOf(model, data.usage || {}),
+  };
 });
 
 // save the report as a PDF (what's on screen, laid out for paper)
