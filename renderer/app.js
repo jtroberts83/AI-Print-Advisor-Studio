@@ -2034,7 +2034,22 @@ function renderCompare() {
 // ---------- history ----------
 $('historyRefresh').onclick = () => loadHistory();
 if (api.reportOpen) $('historyReport').onclick = () => api.reportOpen(); else $('historyReport').hidden = true;   // not in the guided tour
+// status filter and name search: they only hide rows, so ratings and notes typed in a row stay put
+const histStatus = (s) => (s === 'completed' || s === 'cancelled' ? s : s === 'in_progress' ? 'printing' : 'failed');
+function filterHistory() {
+  const st = $('historyStatus').value, q = $('historySearch').value.trim().toLowerCase();
+  const rows = [...$('historyBody').querySelectorAll('.job')];
+  let shown = 0;
+  for (const el of rows) { const ok = (!st || el.dataset.st === st) && (!q || el.dataset.name.includes(q)); el.hidden = !ok; if (ok) shown++; }
+  $('historyCount').textContent = rows.length ? (shown === rows.length ? `${rows.length} prints` : `${shown} of ${rows.length} prints`) : '';
+  let none = $('historyBody').querySelector('.hist-none');
+  if (rows.length && !shown) { if (!none) { none = document.createElement('p'); none.className = 'hint hist-none'; $('historyBody').append(none); } none.textContent = 'No prints match. Change the status or the search.'; }
+  else if (none) none.remove();
+}
+$('historyStatus').onchange = filterHistory;
+$('historySearch').oninput = filterHistory;
 async function loadHistory() {
+  $('historyFilter').hidden = true;
   $('historyBody').innerHTML = '<p class="progress-line">Reading print history…</p>';
   try {
     const h = await withBusy('history', 'Reading print history from your printers…', () => api.historyList());
@@ -2043,7 +2058,7 @@ async function loadHistory() {
     const err = h.errors.length ? `<p class="error">${h.errors.map(esc).join('<br>')}</p>` : '';
     if (!h.jobs.length) { $('historyBody').innerHTML = err + '<p class="hint">No prints yet.</p>'; return; }
     $('historyBody').innerHTML = err + h.jobs.map((j, i) => `
-      <div class="job" data-i="${i}">
+      <div class="job" data-i="${i}" data-st="${histStatus(j.status)}" data-name="${esc(String(j.filename || '').toLowerCase())}">
         <span class="f">${esc(j.filename)}</span><span class="st ${esc(j.status)}">${esc(j.status)}</span>
         <span class="m">${esc(j.printer)}, ${j.start ? new Date(j.start).toLocaleString() : ''}, ${hm(j.printSeconds)}${j.filamentType ? `, ${esc(j.filamentType)}` : ''}${j.layerHeight ? `, ${j.layerHeight} mm layers` : ''}${j.run ? ' <span class="adv">· advisor settings</span>' : ''}</span>
         <div class="rate">
@@ -2063,6 +2078,7 @@ async function loadHistory() {
       el.querySelector('[data-ts]').onclick = () => openTroubleshooter(j);
       const cb = el.querySelector('[data-certjob]'); if (cb) cb.onclick = () => api.reportOpen(j.id);
     });
+    $('historyFilter').hidden = false; filterHistory();
   } catch (e) { $('historyBody').innerHTML = `<p class="error">${esc(cleanErr(e))}</p>`; }
 }
 

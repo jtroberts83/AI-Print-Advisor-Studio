@@ -1,6 +1,8 @@
 # Changelog
 
 ## 2.40.2
+- Print history: a **status filter** (All prints, Completed, Cancelled, Failed, Printing now) and a **search box**
+  for the print's name, with a count of the matching prints.
 - Print report: **🏅 Certificate…** shows only on completed prints (as in Print history), not on cancelled, failed
   or still printing ones.
 

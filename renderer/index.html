@@ -209,6 +209,13 @@
       </div>
       <div class="tabpane hidden" id="tab-history">
         <div class="history-head"><p class="hint" id="historyHint">Prints from your U1s. Rate them so future recommendations learn what worked.</p><button class="btn" id="historyReport" title="A summary of your prints (time, filament, status), or a detailed report with each print’s settings, to print or save as a PDF">📄 Print report…</button><button class="btn" id="historyRefresh">Refresh</button></div>
+        <div class="history-filter" id="historyFilter" hidden>
+          <select id="historyStatus" aria-label="Show prints by status">
+            <option value="">All prints</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option><option value="printing">Printing now</option>
+          </select>
+          <input type="search" id="historySearch" placeholder="Search by name…" aria-label="Search prints by name">
+          <span class="hint" id="historyCount"></span>
+        </div>
         <div id="historyBody"></div>
       </div>
     </aside>

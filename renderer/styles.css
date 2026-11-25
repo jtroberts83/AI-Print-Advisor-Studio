@@ -90,7 +90,7 @@ button { font: inherit; color: inherit; }
 .thumbs button { border: 1px solid var(--line); background: var(--viewer-bg); border-radius: var(--radius-s); padding: 0; aspect-ratio: 1; cursor: zoom-in; overflow: hidden; }
 .thumbs img { width: 100%; height: 100%; object-fit: contain; display: block; }
 
-select, input[type="text"], input[type="password"], textarea {
+select, input[type="text"], input[type="search"], input[type="password"], textarea {
   width: 100%; border: 1px solid var(--line); background: var(--raised); color: var(--ink);
   border-radius: var(--radius-s); padding: 7px 9px; font: inherit;
 }
@@ -313,6 +313,12 @@ table.ctable { width: 100%; border-collapse: collapse; font-size: 12.5px; font-v
 
 .history-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
 .history-head .hint { margin: 0; flex: 1; }
+.history-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.history-filter[hidden] { display: none; }
+.history-filter select { width: auto; flex: 0 0 auto; }
+.history-filter input[type=search] { flex: 1; width: auto; min-width: 140px; }
+.history-filter .hint { margin: 0; font-size: 12px; }
+.job[hidden] { display: none; }
 .job { border-top: 1px solid var(--line); padding: 10px 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; }
 .job .f { font-weight: 600; font-size: 14px; word-break: break-word; }
 .job .m { font-size: 12px; color: var(--muted); grid-column: 1 / -1; }
