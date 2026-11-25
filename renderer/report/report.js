@@ -275,6 +275,16 @@
     if (Number.isFinite(n) && n > 0) return n >= 1000 ? `${(n / 1000).toFixed(2)} kg (${(n / 453.6).toFixed(1)} lb)` : `${n} g (${(n / 28.35).toFixed(1)} oz)`;
     return s;
   }
+  // width ÷ height of a picture (measured once, then the certificate is drawn again with the frame in that shape)
+  const RATIOS = new Map();
+  function photoRatio(src) {
+    if (RATIOS.has(src)) return RATIOS.get(src);
+    RATIOS.set(src, null);
+    const im = new Image();
+    im.onload = () => { if (im.naturalWidth && im.naturalHeight) { RATIOS.set(src, Math.min(4, Math.max(0.25, im.naturalWidth / im.naturalHeight))); if (C.job) renderCert(); } };
+    im.src = src;
+    return null;
+  }
   const C = { job: null, fields: {}, photo: null, camera: [], detail: null, openedAt: 0, qr: false, phone: [], saveT: 0 };
 
   // a stable pseudo-random sequence per print, so decorations don't jump around between renders
@@ -353,15 +363,16 @@
     ].filter(([, v]) => v);
     const no = `No. ${(j.start ? j.start.slice(0, 10).replace(/-/g, '') : '0')}-${(rng(j.id)() * 1e6 | 0).toString().padStart(6, '0')}`;
     const photo = [C.photo, R.thumbs.get(j.id)].find(safeImg) || null;
-    const fit = C.photo ? (f.fit === 'contain' ? 'contain' : 'cover') : 'contain';
+    // the frame takes the picture's own shape (no white bars): its width ÷ height, once the picture is measured
+    const ar = photo && photoRatio(photo);
     const year = (j.end || j.start || new Date().toISOString()).slice(0, 4);
     return `<div class="cert t-${t}">
       ${decoSvg(t, j.id)}
       <div class="paper">
         <header class="chead"><div class="kicker">${esc(tp.kicker)}</div><h1>${tp.letters ? rainbowText(tp.title, tp.letters) : esc(tp.title)}</h1></header>
         <div class="cbody">
-          <figure class="cphoto ${photo ? '' : 'none'}">${photo ? `<img src="${esc(photo)}" alt="" style="object-fit:${fit};object-position:50% ${Number.isFinite(+f.posY) ? +f.posY : 50}%">` : '<span>Add a photo</span>'}
-            ${colors.length ? `<figcaption>${colors.map((x) => `<span class="sw" style="background:${esc(x.color)}"></span>`).join('')}</figcaption>` : ''}</figure>
+          <div class="pcell"><figure class="cphoto ${photo ? '' : 'none'}"${ar ? ` style="--ar:${ar.toFixed(4)}"` : ''}>${photo ? `<img src="${esc(photo)}" alt="" style="object-fit:${C.photo ? 'cover' : 'contain'}">` : '<span>Add a photo</span>'}
+            ${colors.length ? `<figcaption>${colors.map((x) => `<span class="sw" style="background:${esc(x.color)}"></span>`).join('')}</figcaption>` : ''}</figure></div>
           <div class="cinfo">
             <div class="intro">${esc(tp.intro)}</div>
             <div class="cname">${esc(name)}</div>
@@ -430,9 +441,7 @@
         <label class="btn">🖼 Choose a photo…<input id="cFile" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
         <button class="btn" id="cPhone">📱 ${C.qr ? 'Hide the QR code' : 'Take one with your phone'}</button>
         ${C.camera.length ? `<button class="btn" id="cCam" title="The Print Monitor’s photo from the printer’s camera, taken at 99 %">📷 Printer camera photo</button>` : ''}
-        ${C.photo ? `<button class="link" id="cNoPhoto">Use the slicer picture instead</button>
-          <label>Show <select id="cFit"><option value="cover" ${f.fit !== 'contain' ? 'selected' : ''}>Fill the frame</option><option value="contain" ${f.fit === 'contain' ? 'selected' : ''}>The whole photo</option></select></label>
-          ${f.fit !== 'contain' ? `<label>Up / down <input id="cPos" type="range" min="0" max="100" value="${Number.isFinite(+f.posY) ? +f.posY : 50}"></label>` : ''}` : ''}
+        ${C.photo ? `<button class="link" id="cNoPhoto">Use the slicer picture instead</button>` : ''}
       </div>
       ${waiting.length ? `<div class="row phonewait"><span class="muted small">From your phone (click to use):</span>${waiting.map((p) => `<button class="pw" data-pw="${esc(p.id)}" title="${esc(new Date(p.at).toLocaleString())} · ${esc(p.device)}"><img data-pthumb="${esc(p.id)}" alt="Phone photo"></button>`).join('')}</div>` : ''}
       <div id="cQr" class="qr ${C.qr ? '' : 'hidden'}"></div>
@@ -449,8 +458,7 @@
     C.saveT = setTimeout(run, 400);
   }
   async function setPhoto(dataUrl) {
-    C.photo = dataUrl; C.fields.posY = 50;
-    if (dataUrl && C.fields.fit !== 'contain') C.fields.fit = 'cover';
+    C.photo = dataUrl;
     await saveFields(dataUrl);
     certControls(); renderCert();
   }
@@ -507,13 +515,12 @@
   $('certControls').addEventListener('input', (e) => {
     const t = e.target, f = C.fields;
     if (t.id === 'cName') f.name = t.value; else if (t.id === 'cTo') f.to = t.value; else if (t.id === 'cFrom') f.from = t.value;
-    else if (t.id === 'cMsg') f.message = t.value; else if (t.id === 'cWeight') f.weight = t.value; else if (t.id === 'cPos') f.posY = +t.value; else return;
+    else if (t.id === 'cMsg') f.message = t.value; else if (t.id === 'cWeight') f.weight = t.value; else return;
     saveFields(); renderCert();
   });
   $('certControls').addEventListener('change', async (e) => {
     const t = e.target;
     if (t.name === 'tpl') { C.fields.template = t.value; saveFields(); certControls(); renderCert(); }
-    else if (t.id === 'cFit') { C.fields.fit = t.value; saveFields(); certControls(); renderCert(); }
     else if (t.id === 'cFile' && t.files[0]) { try { cstatus('Adding the photo…'); await setPhoto(await shrinkPhoto(t.files[0])); cstatus('✓ Photo added.'); } catch (err) { cstatus(err.message || String(err)); } }
   });
   $('certControls').addEventListener('click', async (e) => {

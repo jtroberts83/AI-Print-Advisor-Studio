@@ -4,6 +4,7 @@
 - **🏅 Certificate…** on each completed print in the **Print history** tab: opens the certificate for that print straight away.
 - Certificates: a long name or message gets smaller type to fit, instead of pushing other lines off the page.
 - Certificates: when the message is still too long, it ends with “…” on the last line that fits and the editor says so.
+- Certificates: the photo frame takes the photo’s shape (wide or tall), so there are no white bars above, below or beside it. The Show and Up / down controls are gone, as they’re no longer needed.
 - Fix: print times could read “5 h 60 min” (now 6 h 00 min); pattern names read as words (“adaptive cubic”, not “adaptivecubic”).
 - Certificates: an optional **Weight** field for the finished model (grams if you type just a number, shown with ounces; or type it your way, like “1.2 lb”). Left empty, it isn’t on the certificate.
 - Security hardening (code scanning alert): the print report and certificates only show pictures that are image data made by the app, escaped, never other text put into the page.
