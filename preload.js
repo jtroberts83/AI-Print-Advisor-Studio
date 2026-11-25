@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('advisor', {
   exportPresets: (args) => ipcRenderer.invoke('export-presets', args),
   historyList: () => ipcRenderer.invoke('history-list'),
   reportOpen: (certFor) => ipcRenderer.invoke('report-open', certFor),
+  statsOpen: () => ipcRenderer.invoke('stats-open'),
+  statsJobs: (limit) => ipcRenderer.invoke('stats-jobs', limit),
   onReportCert: (cb) => ipcRenderer.on('report-cert', (_e, id) => cb(id)),
   reportJobs: (limit) => ipcRenderer.invoke('report-jobs', limit),
   reportDetail: (jobId) => ipcRenderer.invoke('report-detail', jobId),

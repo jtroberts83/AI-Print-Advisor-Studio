@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'">
+  <title>Print stats</title>
+  <link rel="stylesheet" href="stats.css">
+</head>
+<body>
+  <header class="bar">
+    <h1>Print stats</h1>
+    <label>Period
+      <select id="range">
+        <option value="7">Last 7 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last 12 months</option>
+        <option value="0" selected>All prints read</option>
+      </select></label>
+    <label title="How many past prints to read from each printer">History
+      <select id="depth">
+        <option value="100">last 100 per printer</option>
+        <option value="300" selected>last 300 per printer</option>
+        <option value="1000">last 1000 per printer</option>
+      </select></label>
+    <label>Units
+      <select id="units">
+        <option value="metric">Metric (m, kg)</option>
+        <option value="imperial">Imperial (ft, lb)</option>
+      </select></label>
+    <label title="What a 1 kg spool costs you on average. Used for the cost of wasted filament.">Spool price
+      <span class="money">$<input id="price" type="number" min="1" max="500" step="0.5" value="15"></span> <span id="perSpool">per 1 kg spool</span></label>
+    <button class="btn" id="refresh">Refresh</button>
+    <span class="muted" id="status" role="status"></span>
+  </header>
+
+  <main>
+    <section class="kpis" id="kpis" aria-label="Totals"></section>
+
+    <section>
+      <h2>Each printer</h2>
+      <p class="muted small">A printer with many more cancelled or failed prints than the others may need a look (nozzle, bed, belts, filament path).</p>
+      <div id="printers"></div>
+    </section>
+
+    <section>
+      <h2>Every print, start to finish</h2>
+      <div class="legend" id="legendTime"></div>
+      <div class="chart" id="timeline"></div>
+    </section>
+
+    <section>
+      <h2>Prints over time, by printer</h2>
+      <div class="legend" id="legendBars"></div>
+      <div class="multiples" id="perPrinter"></div>
+    </section>
+  </main>
+
+  <div class="tip" id="tip" hidden></div>
+  <script src="stats.js"></script>
+</body>
+</html>

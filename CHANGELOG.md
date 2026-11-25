@@ -1,6 +1,19 @@
 # Changelog
 
-## 2.40.2
+## 2.41.0
+- **📊 Print stats…** on the Print history tab: a window with how your prints went, across all your printers.
+  - The share of finished prints that **completed**, were **cancelled** or **failed**.
+  - **Hours of successful printing** and **hours wasted** on cancelled and failed prints, in hours and minutes.
+  - **Filament used** on all printers, the filament **wasted** on cancelled and failed prints, and **what it cost**
+    (at $15 per 1 kg spool; change the price to yours).
+  - **Each printer**: its completed, cancelled and failed rates, times, filament and cost. A printer with clearly
+    more problems than the others is flagged.
+  - **Every print, start to finish**: a timeline per printer, colored by how each print ended (green completed,
+    yellow cancelled, red failed, blue printing now). Hover a print for its details.
+  - **Prints over time, by printer**: completed, cancelled and failed prints per day, week or month.
+  - Pick the period (7 days to all prints), how much history to read, and **metric or imperial** units.
+- Certificates: **✨ AI ideas** works with every model again (it was turned down with “tool_choice … not supported for
+  this model”, e.g. on Opus 5.5).
 - Print history: a **status filter** (All prints, Completed, Cancelled, Failed, Printing now) and a **search box**
   for the print's name, with a count of the matching prints.
 - Print report: **🏅 Certificate…** shows only on completed prints (as in Print history), not on cancelled, failed

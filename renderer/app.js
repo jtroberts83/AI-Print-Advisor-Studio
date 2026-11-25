@@ -2034,6 +2034,7 @@ function renderCompare() {
 // ---------- history ----------
 $('historyRefresh').onclick = () => loadHistory();
 if (api.reportOpen) $('historyReport').onclick = () => api.reportOpen(); else $('historyReport').hidden = true;   // not in the guided tour
+if (api.statsOpen) $('historyStats').onclick = () => api.statsOpen(); else $('historyStats').hidden = true;
 // status filter and name search: they only hide rows, so ratings and notes typed in a row stay put
 const histStatus = (s) => (s === 'completed' || s === 'cancelled' ? s : s === 'in_progress' ? 'printing' : 'failed');
 function filterHistory() {

@@ -77,7 +77,8 @@ Everything AI 3D Print Advisor Studio can do, in one list. New to 3D printing? S
 
 ## Print history and troubleshooting
 
-- **Print history** from your printers; rate each print so future advice learns from it.
+- **Print history** from your printers; rate each print so future advice learns from it. Filter by status and search by name.
+- **Print stats**: success rate, hours printed and wasted, filament used and wasted with its cost, each printer’s cancel and fail rate, a start-to-finish timeline of every print and each printer’s prints over time (metric or imperial).
 - **Print report**: a summary of the prints you pick (status, time, filament, colors, pictures, “≈ a school bus” comparisons) or a detailed report with each print's settings (quality, strength, speed, support, multi-material, temperatures) read from its G-code; print it or save it as a PDF.
 - **Print certificates**: a colorful one-page certificate for a single print to give with it (Fancy, Professional, Kids’ toy, Christmas gift, Birthday gift or Rainbow), with a photo from the PC, your phone (QR code) or the printer camera, a name, To and From, a message, its start and finish times and its stats. **AI ideas** suggests fun names and sayings for the model; **Touch up photo** adjusts exposure, contrast, colors and sharpness, removes the background, and has an Auto-fix, all with a live preview.
 - **Settings per object**: multi-plate and multi-object files keep different settings for different objects in one 3MF (Orca's per-object settings). "Analyze all objects" gets AI advice for each different object (copies and near-identical ones once), shows the cost first, and merges everything into one file.
