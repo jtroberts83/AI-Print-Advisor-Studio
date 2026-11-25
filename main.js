@@ -2459,21 +2459,27 @@ ipcMain.handle('history-rate', async (_e, { jobId, rating, note }) => { await S.
 
 // ---------- Print report (Print history → Print report…): its own window, so it can be printed or saved as a PDF ----------
 let reportWin = null;
-function openReportWindow() {
-  if (reportWin && !reportWin.isDestroyed()) { if (reportWin.isMinimized()) reportWin.restore(); reportWin.show(); reportWin.focus(); return; }
+// certFor: a print's id (Print history → 🏅 Certificate…): the window opens on that print's certificate
+function openReportWindow(certFor) {
+  const cert = typeof certFor === 'string' && certFor.length < 300 ? certFor : null;
+  if (reportWin && !reportWin.isDestroyed()) {
+    if (reportWin.isMinimized()) reportWin.restore(); reportWin.show(); reportWin.focus();
+    if (cert) reportWin.webContents.send('report-cert', cert);
+    return;
+  }
   const { maximized, ...b } = savedBounds('report', 1180, 900);
   reportWin = new BrowserWindow({
     ...b, minWidth: 720, minHeight: 520, title: 'Print report', backgroundColor: '#ffffff', autoHideMenuBar: true, icon: appIconPath,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
   reportWin.setMenuBarVisibility(false);
-  reportWin.loadURL('app://bundle/renderer/report/index.html');
+  reportWin.loadURL(`app://bundle/renderer/report/index.html${cert ? `#cert=${encodeURIComponent(cert)}` : ''}`);
   reportWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   if (maximized) reportWin.maximize();
   rememberBounds('report', reportWin);
   reportWin.on('closed', () => { reportWin = null; });
 }
-ipcMain.handle('report-open', () => { openReportWindow(); return true; });
+ipcMain.handle('report-open', (_e, certFor) => { openReportWindow(certFor); return true; });
 // more history than the Print history tab shows (that one lists 60 per printer)
 ipcMain.handle('report-jobs', async (_e, limit) => { await S.ready;
   const printers = await getPrinters();
@@ -2571,7 +2577,7 @@ ipcMain.handle('cert-set', async (_e, jobId, fields, photo) => { await S.ready;
   const k = reportKey(job);
   await fs.mkdir(certDir(), { recursive: true });
   const f = fields && typeof fields === 'object' ? fields : {};
-  const clean = { name: certText(f.name, 80), to: certText(f.to, 80), from: certText(f.from, 80), message: certText(f.message, 240),
+  const clean = { name: certText(f.name, 80), to: certText(f.to, 80), from: certText(f.from, 80), message: certText(f.message, 240), weight: certText(f.weight, 30),
     template: certText(f.template, 20), fit: f.fit === 'contain' ? 'contain' : 'cover', posY: Number.isFinite(+f.posY) ? Math.max(0, Math.min(100, +f.posY)) : 50 };
   await fs.writeFile(path.join(certDir(), k + '.json'), JSON.stringify(clean));
   if (photo !== undefined) {

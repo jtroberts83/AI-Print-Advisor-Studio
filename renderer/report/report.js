@@ -14,7 +14,7 @@
   fetch('../monitor/comparisons.json').then((r) => r.json()).then((x) => { BIG = x; render(); }).catch(() => {});
 
   // ---------- small helpers
-  const hm = (s) => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`; };
+  const hm = (s) => { const t = Math.round((s || 0) / 60), h = Math.floor(t / 60), m = t % 60; return h ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`; };
   const dayStr = (iso) => (iso ? new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '');
   const dtStr = (iso) => (iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -206,6 +206,7 @@
       status(R.errors.length && R.jobs.length ? `Some printers didn’t answer: ${R.errors.join(' · ')}` : '');
     } catch (e) { R.errors = [String(e.message || e)]; status(''); }
     R.loading = false; render(); loadThumbs();
+    if (R.pendingCert) { const id = R.pendingCert; R.pendingCert = null; certFor(id); }
     if (mode() === 'detail') loadDetails();
   }
   const status = (t) => { $('status').textContent = t; };
@@ -266,6 +267,14 @@
   TEMPLATES.rainbow.letters = ['#e63946', '#f4a261', '#d4a93a', '#2a9d8f', '#457b9d', '#9b5de5'];
   // each letter its own color (a gradient clipped to the text prints with a box around it)
   const rainbowText = (s, cols) => { let i = 0; return [...s].map((ch) => (ch === ' ' ? ' ' : `<span style="color:${cols[i++ % cols.length]}">${esc(ch)}</span>`)).join(''); };
+  // the model's weight as the user weighed it (optional): a bare number is grams, anything else as typed ("1.2 lb")
+  function weightText(w) {
+    const s = String(w || '').trim();
+    if (!s) return '';
+    const n = Number(s.replace(',', '.'));
+    if (Number.isFinite(n) && n > 0) return n >= 1000 ? `${(n / 1000).toFixed(2)} kg (${(n / 453.6).toFixed(1)} lb)` : `${n} g (${(n / 28.35).toFixed(1)} oz)`;
+    return s;
+  }
   const C = { job: null, fields: {}, photo: null, camera: [], detail: null, openedAt: 0, qr: false, phone: [], saveT: 0 };
 
   // a stable pseudo-random sequence per print, so decorations don't jump around between renders
@@ -335,6 +344,7 @@
       ['Time in the making', live(j) ? (j.estimatedSeconds ? `about ${hm(j.estimatedSeconds)}` : '') : hm(j.printSeconds)],
       ['Birthplace', j.printer],
       ['Height', j.objectHeight ? `${j.objectHeight} mm (${(j.objectHeight / 25.4).toFixed(1)} in)` : ''],
+      ['Weight', weightText(f.weight)],
       ['Layers', j.layers ? Number(j.layers).toLocaleString() : ''],
       ['Layer height', j.layerHeight ? `${j.layerHeight} mm` : sec('quality', 'layer_height')],
       ['Filament', m ? `${m.toFixed(1)} m${(gu || plannedG(j)) ? ` · ${kg(gu || plannedG(j))}` : ''}` : ''],
@@ -373,7 +383,25 @@
   function renderCert() {
     if (!C.job) return;
     $('cert').innerHTML = certHtml();
+    const cut = fitText();
+    const note = $('cMsgNote'); if (note) note.hidden = !cut;
     fitCert();
+  }
+  // a long name or message: smaller type until everything fits (the message last, never cut mid-line)
+  function fitText() {
+    const info = $('cert').querySelector('.cinfo'); if (!info) return;
+    const over = () => info.scrollHeight > info.clientHeight + 1;
+    const msg = info.querySelector('.cmsg'), name = info.querySelector('.cname');
+    for (let pt = 28; name && over() && pt >= 22; pt -= 2) name.style.fontSize = `${pt}pt`;
+    for (let pt = 12.5; msg && over() && pt >= 9; pt -= 0.5) msg.style.fontSize = `${pt}pt`;
+    // still too long: the message ends with … on the last whole line that fits
+    if (msg && over()) {
+      const lh = parseFloat(getComputedStyle(msg).lineHeight) || 16;
+      const lines = Math.max(1, Math.floor((msg.offsetHeight - (info.scrollHeight - info.clientHeight)) / lh));
+      Object.assign(msg.style, { display: '-webkit-box', webkitBoxOrient: 'vertical', webkitLineClamp: String(lines), overflow: 'hidden' });
+      return true;
+    }
+    return false;
   }
   function fitCert() {
     const el = $('cert').querySelector('.cert'); if (!el) return;
@@ -395,7 +423,8 @@
         <label class="grow">${esc(TEMPLATES[cur].to)} <input id="cTo" type="text" maxlength="80" value="${esc(f.to || '')}"></label>
         <label class="grow">${esc(TEMPLATES[cur].from)} <input id="cFrom" type="text" maxlength="80" value="${esc(f.from || '')}"></label>
       </div>
-      <div class="row"><label class="grow">Message (optional) <input id="cMsg" type="text" maxlength="240" placeholder="e.g. Merry Christmas! Made just for you." value="${esc(f.message || '')}"></label></div>
+      <div class="row"><label class="grow">Message (optional) <input id="cMsg" type="text" maxlength="240" placeholder="e.g. Merry Christmas! Made just for you." value="${esc(f.message || '')}"><small id="cMsgNote" class="warn" hidden>Too long to fit: it ends with “…”. Shorten it or the name.</small></label>
+        <label title="Weigh the finished model if you can (a kitchen scale works). Grams if you type just a number. Left empty, it isn’t on the certificate.">Weight (optional) <input id="cWeight" type="text" maxlength="30" size="10" placeholder="e.g. 142" value="${esc(f.weight || '')}"></label></div>
       <div class="row">
         <span class="lbl">Photo</span>
         <label class="btn">🖼 Choose a photo…<input id="cFile" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
@@ -478,7 +507,7 @@
   $('certControls').addEventListener('input', (e) => {
     const t = e.target, f = C.fields;
     if (t.id === 'cName') f.name = t.value; else if (t.id === 'cTo') f.to = t.value; else if (t.id === 'cFrom') f.from = t.value;
-    else if (t.id === 'cMsg') f.message = t.value; else if (t.id === 'cPos') f.posY = +t.value; else return;
+    else if (t.id === 'cMsg') f.message = t.value; else if (t.id === 'cWeight') f.weight = t.value; else if (t.id === 'cPos') f.posY = +t.value; else return;
     saveFields(); renderCert();
   });
   $('certControls').addEventListener('change', async (e) => {
@@ -508,5 +537,13 @@
     if (fresh) usePhonePhoto(fresh.id); else certControls();
   });
 
+  // Print history → 🏅 Certificate…: straight to that print's certificate (when the window opens, or while it's open)
+  function certFor(id) {
+    if (!R.jobs.length) { R.pendingCert = id; return; }
+    if (R.jobs.some((j) => j.id === id)) openCert(id);
+    else status('That print is further back than the history read here: pick more under History.');
+  }
+  { const m = /^#cert=(.+)$/.exec(location.hash); if (m) { R.pendingCert = decodeURIComponent(m[1]); history.replaceState(null, '', location.pathname); } }
+  if (api.onReportCert) api.onReportCert((id) => certFor(id));
   load();
 })();

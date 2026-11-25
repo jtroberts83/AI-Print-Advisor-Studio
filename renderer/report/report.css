@@ -132,17 +132,19 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .cphoto figcaption { position: absolute; left: 8px; bottom: 8px; display: flex; gap: 4px; padding: 4px 6px; border-radius: 999px; background: rgba(255,255,255,.9); }
 .cphoto .sw { width: 16px; height: 16px; }
 .cinfo { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.cinfo > * { flex-shrink: 0; }   /* never squash the name or the stats; only the message gives way (below) */
+.cinfo > .cmsg { overflow: hidden; }
 .cinfo .intro { font-style: italic; font-size: 13pt; color: #4a5568; }
 .cname { font-family: var(--f-name); font-size: 30pt; line-height: 1.15; color: var(--c-1); margin: 2px 0 2px; word-break: break-word;
   border-bottom: 2px solid var(--c-2); padding-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.born { font-size: 11.5pt; margin: 4px 0 6px; } .born b { color: var(--c-1); }
-.cstats { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 16px; margin: 0; font-size: 9.8pt; line-height: 1.3; }
+.born { font-size: 11pt; margin: 3px 0 5px; } .born b { color: var(--c-1); }
+.cstats { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; margin: 0; font-size: 9.6pt; line-height: 1.22; }
 .cstats div { border-bottom: 1px dotted rgba(0,0,0,.18); padding: 1px 0; min-width: 0; }
-.cstats dt { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .12em; color: var(--c-2); font-weight: 700; font-family: "Segoe UI", system-ui, sans-serif; }
+.cstats dt { font-size: 7pt; text-transform: uppercase; letter-spacing: .12em; color: var(--c-2); font-weight: 700; font-family: "Segoe UI", system-ui, sans-serif; }
 .cstats dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
-.cfun { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 10pt; color: var(--c-1); background: var(--c-soft); border-radius: 8px; padding: 5px 10px; }
+.cfun { display: flex; align-items: center; gap: 8px; margin-top: 5px; font-size: 9.6pt; color: var(--c-1); background: var(--c-soft); border-radius: 8px; padding: 5px 10px; }
 .cfun .ic { width: 20px; height: 20px; color: var(--c-2); }
-.cmsg { margin-top: 6px; font-family: var(--f-name); font-size: 14pt; line-height: 1.25; color: var(--c-1); text-align: center; }
+.cmsg { margin-top: 5px; font-family: var(--f-name); font-size: 13pt; line-height: 1.25; color: var(--c-1); text-align: center; }
 .cfoot { display: grid; grid-template-columns: 1fr 1.25in 1fr; align-items: end; gap: 0.3in; margin-top: 0.08in; }
 .party { text-align: center; }
 .party .val { font-family: var(--f-name); font-size: 19pt; color: var(--c-1); min-height: 1.45em; border-bottom: 1.5px solid var(--c-ink); line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

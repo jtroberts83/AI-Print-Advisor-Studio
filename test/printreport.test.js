@@ -56,6 +56,7 @@ test('print report: settings grouped for people, only the filaments used', () =>
   assert.strictEqual(item('quality', 'ironing_type').value, 'No ironing');
   assert.strictEqual(item('strength', 'wall_loops').advisor, true);
   assert.strictEqual(item('strength', 'sparse_infill_density').value, '15%');
+  assert.strictEqual(PR.settingsReport({ sparse_infill_pattern: 'adaptivecubic' }).sections[0].items[0].value, 'Adaptive cubic');
   assert.strictEqual(item('speed', 'outer_wall_speed').value, '63 mm/s');
   assert.strictEqual(item('support', 'support_type').value, 'Tree (auto)');
   assert.strictEqual(item('support', 'enable_support').value, 'On');

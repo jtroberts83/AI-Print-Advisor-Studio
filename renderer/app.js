@@ -2049,6 +2049,7 @@ async function loadHistory() {
         <div class="rate">
           ${['good', 'issues', 'failed'].map(r => `<button class="btn" data-r="${r}" aria-pressed="${j.rating?.rating === r}">${{ good: 'Good', issues: 'Had issues', failed: 'Failed' }[r]}</button>`).join('')}
           <input type="text" placeholder="What happened? (optional)" value="${esc(j.rating?.note || '')}" aria-label="Note for ${esc(j.filename)}">
+          ${j.status === 'completed' && api.reportOpen ? `<button class="btn cert-btn" data-certjob="${i}" title="A printable certificate for this print, like a birth certificate, to give with the model">🏅 Certificate…</button>` : ''}
           <button class="btn ts-btn" data-ts="${i}">Troubleshoot…</button>
         </div>
         ${j.diagnoses && j.diagnoses[0] ? `<div class="diag">Diagnosis ${new Date(j.diagnoses[0].at).toLocaleDateString()}: ${esc(j.diagnoses[0].summary)}</div>` : ''}
@@ -2060,6 +2061,7 @@ async function loadHistory() {
       el.querySelectorAll('[data-r]').forEach(b => b.onclick = () => save(j.rating?.rating === b.dataset.r ? null : b.dataset.r));
       note.onchange = () => { if (j.rating) save(j.rating.rating); else toast('Pick Good, Had issues or Failed to save the note.', 3500); };
       el.querySelector('[data-ts]').onclick = () => openTroubleshooter(j);
+      const cb = el.querySelector('[data-certjob]'); if (cb) cb.onclick = () => api.reportOpen(j.id);
     });
   } catch (e) { $('historyBody').innerHTML = `<p class="error">${esc(cleanErr(e))}</p>`; }
 }

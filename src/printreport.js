@@ -76,10 +76,15 @@ function parseFooter(text) {
 // ---------------------------------------------------------------- turning settings into report rows
 const ON_OFF = (v) => (v === '1' || v === 'true' ? 'On' : v === '0' || v === 'false' ? 'Off' : v);
 const UNITS = { mm: ' mm', mms: ' mm/s', acc: ' mm/s²', c: ' °C', pct: '%', deg: '°', mm3: ' mm³/s', layers: ' layers', mm3v: ' mm³' };
+// Orca's internal names for patterns, as words
+const WORDS = { adaptivecubic: 'adaptive cubic', supportcubic: 'support cubic', '3dhoneycomb': '3D honeycomb', monotonicline: 'monotonic line',
+  alignedrectilinear: 'aligned rectilinear', hilbertcurve: 'Hilbert curve', archimedeanchords: 'Archimedean chords', octagramspiral: 'octagram spiral',
+  crosshatch: 'cross hatch', quartercubic: 'quarter cubic', tpmsd: 'TPMS-D', tpmsfk: 'TPMS-FK', zigzag: 'zig-zag', crosszag: 'cross zag', lockedzag: 'locked zag' };
 function nice(v) {
   if (v == null) return '';
   let s = String(v).replace(/^"|"$/g, '');
   if (s === 'nil' || s === '') return '';
+  if (WORDS[s]) s = WORDS[s];
   // enums: "tree(auto)" → "Tree (auto)", "no ironing" → "No ironing", "monotonicline" stays readable
   if (/^[a-z][a-z_ ]*(\([a-z ]+\))?$/.test(s)) s = s.replace(/_/g, ' ').replace(/\(/, ' (').replace(/^./, (c) => c.toUpperCase());
   return s;
