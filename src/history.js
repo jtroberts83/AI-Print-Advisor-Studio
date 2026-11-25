@@ -19,6 +19,26 @@ function baseUrl(u) {
   return s;
 }
 
+// Moonraker metadata lists one value per filament: types "PLA;PLA;PETG", colors "#E0E0E0;#FFFFFF;…", grams and mm as arrays
+function filamentsOf(md) {
+  const split = (v) => (Array.isArray(v) ? v : String(v ?? '').split(';')).map((x) => String(x).replace(/^"|"$/g, '').trim());
+  const types = split(md.filament_type), colors = split(md.filament_colour), names = split(md.filament_name);
+  const grams = Array.isArray(md.filament_weight) ? md.filament_weight : [], mm = Array.isArray(md.filament_used_mm) ? md.filament_used_mm : [];
+  const n = Math.max(types.length, grams.length, mm.length);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const g = +grams[i] || 0, m = +mm[i] || 0;
+    if (n > 1 && !g && !m) continue;   // a filament slot this print didn't use
+    out.push({ i, type: types[i] || '', name: names[i] || '', color: /^#[0-9a-f]{6}/i.test(colors[i] || '') ? colors[i].slice(0, 7) : '', grams: g || null, mm: m || null });
+  }
+  return out;
+}
+function largestThumb(list) {
+  const t = (Array.isArray(list) ? list : []).map((x) => (typeof x === 'string' ? x : x && x.relative_path)).filter(Boolean)
+    .map((p) => ({ p, s: +((/-(\d+)x\d+\.png$/i.exec(p) || [])[1] || 0) })).sort((a, b) => b.s - a.s)[0];
+  return t ? t.p : null;
+}
+
 async function fetchJobs(printers, limit = 60) {
   const jobs = [], errors = [];
   await Promise.all(printers.filter(p => p.url).map(async (p) => {
@@ -35,6 +55,9 @@ async function fetchJobs(printers, limit = 60) {
           layerHeight: md.layer_height ?? null, filamentType: md.filament_type || null, filamentName: md.filament_name || null,
           grams: md.filament_weight_total ?? null, slicer: md.slicer ? `${md.slicer} ${md.slicer_version || ''}`.trim() : null,
           objectHeight: md.object_height ?? null,
+          // for the print report: each filament the print used, its color and amount, and the slicer's picture
+          end: j.end_time ? new Date(j.end_time * 1000).toISOString() : null, layers: md.layer_count ?? null,
+          filaments: filamentsOf(md), thumb: largestThumb(md.thumbnails),
         });
       }
     } catch (e) {
@@ -98,4 +121,4 @@ function historyForPrompt(jobs, fileName) {
   return { sameModel, rated, byMaterial, totalJobs: jobs.length };
 }
 
-module.exports = { fetchJobs, PrintLog, historyForPrompt, stem };
+module.exports = { fetchJobs, PrintLog, historyForPrompt, stem, filamentsOf, largestThumb };

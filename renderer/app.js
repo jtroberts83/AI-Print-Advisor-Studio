@@ -2033,6 +2033,7 @@ function renderCompare() {
 
 // ---------- history ----------
 $('historyRefresh').onclick = () => loadHistory();
+if (api.reportOpen) $('historyReport').onclick = () => api.reportOpen(); else $('historyReport').hidden = true;   // not in the guided tour
 async function loadHistory() {
   $('historyBody').innerHTML = '<p class="progress-line">Reading print history…</p>';
   try {

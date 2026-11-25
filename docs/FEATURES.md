@@ -62,6 +62,7 @@ Everything AI 3D Print Advisor Studio can do, in one list. New to 3D printing? S
 - **Add from a screenshot** of any order page, receipt or product page (read by Claude), with photos cut out automatically and **missing photos found online** from the brand's store.
 - **Manufacturer print settings** and Snapmaker Orca presets for many brands.
 - **Prices**: average cost per roll, a graph of what you paid for each roll, and **Check prices now** (Claude web search) for current prices and sales below what you last paid; camelcamelcamel and Keepa links for Amazon price history.
+- **When you last added spools**: dashboard tiles for the last spools added from an order and by hand, with the list behind each.
 - **Color gaps**: finds the medium and large holes in your on-hand colors (per material, filtered by finish), ranks the colors that would fill the most, and (Claude web search, Amazon first) finds products for the top 10 with checked links, prices and product photos.
 - **Dashboard**: totals, value, average per roll, what's running low, what's cheaper now, what's loaded in each printer.
 - **Labels** for spools (Avery sheet or label printer), **CSV export**, **backups** (daily automatic copies too).
@@ -77,6 +78,7 @@ Everything AI 3D Print Advisor Studio can do, in one list. New to 3D printing? S
 ## Print history and troubleshooting
 
 - **Print history** from your printers; rate each print so future advice learns from it.
+- **Print report**: a summary of the prints you pick (status, time, filament, colors, pictures, “≈ a school bus” comparisons) or a detailed report with each print's settings (quality, strength, speed, support, multi-material, temperatures) read from its G-code; print it or save it as a PDF.
 - **Settings per object**: multi-plate and multi-object files keep different settings for different objects in one 3MF (Orca's per-object settings). "Analyze all objects" gets AI advice for each different object (copies and near-identical ones once), shows the cost first, and merges everything into one file.
 - **Troubleshooter**: paint where a print failed, pick the symptoms, add photos; the AI reads the printed G-code at that spot and gives likely causes and fixes. **Save fixed 3MF** saves a copy of the model with the chosen fixes built in, ready to print from Orca.
 - **Photos straight from your phone**: scan the troubleshooter's QR code and take the pictures with your phone's camera; they appear in the troubleshooter by themselves over your home Wi-Fi (no cloud storage, no app).

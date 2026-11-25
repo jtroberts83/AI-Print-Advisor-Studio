@@ -123,9 +123,18 @@ class U1Printer {
       const lib = url.protocol === 'https:' ? https : http;
       const req = lib.get(url, { headers: headers(this.apiKey) }, (res) => {
         if (res.statusCode !== 200) { res.resume(); return reject(new Error(res.statusCode === 404 ? 'That G-code is no longer on the printer' : `HTTP ${res.statusCode}`)); }
+        // a connection that drops part way still "finishes": check the size, so a cut-off file is never kept
+        const want = Number(res.headers['content-length']) || 0;
+        let got = 0, aborted = false;
+        res.on('data', (c) => { got += c.length; });
+        res.on('aborted', () => { aborted = true; });
+        res.on('error', (e) => { aborted = true; out.destroy(e); });
         const out = fs.createWriteStream(localPath);
         res.pipe(out);
-        out.on('finish', () => resolve(localPath));
+        out.on('finish', () => {
+          if (aborted || (want && got !== want)) { fs.unlink(localPath, () => {}); reject(new Error(`The download stopped early (${Math.round(got / 1e6)} of ${Math.round(want / 1e6)} MB). Try again.`)); }
+          else resolve(localPath);
+        });
         out.on('error', reject);
       });
       req.on('error', e => reject(new Error(/ECONNREFUSED|EHOSTUNREACH|ENOTFOUND/.test(e.code || e.message) ? 'Printer not reachable' : e.message)));

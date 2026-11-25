@@ -179,7 +179,7 @@ function newSpool(fid, o = {}) {
   const f = filDef(fid);
   const id = String(state.seq++).padStart(3, '0');
   const status = o.status || 'new';
-  state.spools[id] = { id, fid, src:o.src || null, status, rem: o.rem ?? (status === 'empty' ? 0 : f.grams), loc:o.loc || '',
+  state.spools[id] = { id, fid, src:o.src || null, how:o.how || (o.src ? 'order' : null), status, rem: o.rem ?? (status === 'empty' ? 0 : f.grams), loc:o.loc || '',
     price:o.price ?? null, bought:o.bought || today(), opened:null, used:null, emptyG:null,
     log:[{ t:nowISO(), type:'created', note:o.note || (o.src ? 'Imported from order' : 'Added') }] };
   if (o.tags && o.tags.length) { state.spools[id].tags = [...o.tags]; o.tags.forEach(tid => logEv(state.spools[id], 'tag', { id:tid })); }
@@ -463,7 +463,7 @@ function card(f) {
     </div></article>`;
 }
 function quickStep(fid, dir) {
-  if (dir > 0) { newSpool(fid, { note:'Added with +' }); toast('Added a sealed spool'); }
+  if (dir > 0) { newSpool(fid, { how:'manual', note:'Added with +' }); toast('Added a sealed spool'); }
   else {
     const f = allFilaments().find(x => x.id === fid);
     if (!f.stock.length) return;
@@ -585,6 +585,7 @@ function renderDashboard(fil) {
       <div class="kpi"><div class="v">${avgRoll != null ? fmt$(avgRoll) : '—'}</div><div class="l">Average per roll · ${paidAll.length} with a price</div></div>
       <div class="kpi"><div class="v">${fmt$0(value)}</div><div class="l">Value of what's left · ~$${perKg.toFixed(2)}/kg</div></div>
       <div class="kpi ${low.length ? 'alert' : ''}"><div class="v">${low.length}</div><div class="l">Running low (≤ ${state.settings.low} g)</div></div>
+      ${addedKpi('order')}${addedKpi('manual')}
     </div>
     <div class="panels">
       ${printerLocs.length ? `<div class="panel" style="grid-column:1/-1"><h3>Loaded in printers</h3><div class="slots">${printerLocs.map(l => {
@@ -860,7 +861,7 @@ function fillTemps(fid, draft) {
 function addTaggedSpool(fid) {
   const { scan, draft } = tagScan;
   const status = $('[data-tagstatus]')?.value || 'new', loc = $('[data-tagloc]')?.value || '';
-  const s = newSpool(fid, { tags:[scan.spoolId], note:'Added by scanning its tag' });
+  const s = newSpool(fid, { how:'manual', tags:[scan.spoolId], note:'Added by scanning its tag' });
   if (status === 'opened') setStatus(s, 'opened');
   if (loc) setLoc(s, loc);
   fillTemps(fid, draft);
@@ -1162,7 +1163,7 @@ function openForm(existing) {
     else {
       state.custom.push(rec);
       const price = fd.get('price') ? +fd.get('price') : null;
-      for (let i = 0; i < (+fd.get('qty') || 0); i++) { const s = newSpool(rec.id, { price }); if (fd.get('loc')) setLoc(s, fd.get('loc')); }
+      for (let i = 0; i < (+fd.get('qty') || 0); i++) { const s = newSpool(rec.id, { how:'manual', price }); if (fd.get('loc')) setLoc(s, fd.get('loc')); }
     }
     persist(); toast(existing ? 'Saved' : 'Filament added');
     existing ? openDetail(rec.id) : closeModal();
@@ -1369,7 +1370,7 @@ $('#overlay').addEventListener('click', e => {
     spoolsOf(openFid).forEach(x => delete state.spools[x.id]); state.custom = state.custom.filter(c => c.id !== openFid); delete state.fil[openFid];
     persist(); toast('Deleted'); return closeModal();
   }
-  if (t.closest('[data-addspool]')) { newSpool(openFid); persist(); renderSpoolBox(); return toast('Spool added'); }
+  if (t.closest('[data-addspool]')) { newSpool(openFid, { how:'manual' }); persist(); renderSpoolBox(); return toast('Spool added'); }
   if (t.closest('[data-labels-fil]')) return printLabels(spoolsOf(openFid).filter(x => IN_STOCK.has(x.status)).map(x => x.id));
   if (t.closest('[data-toggle-arch]')) { openPanel = { ...(openPanel || {}), showArchived: !openPanel?.showArchived }; return renderSpoolBox(); }
   if (t.closest('[data-tagwrite-fil]')) {
@@ -1920,7 +1921,7 @@ function addFromShot() {
     }
     const price = it.price === '' || it.price == null ? null : +it.price;
     for (let i = 0; i < (+it.spools || 0); i++) {
-      const s = newSpool(f.id, { status: it.status === 'ordered' ? 'ordered' : 'new', price, bought: it.order_date || today(), note: 'Added from a screenshot' });
+      const s = newSpool(f.id, { how: 'order', status: it.status === 'ordered' ? 'ordered' : 'new', price, bought: it.order_date || today(), note: 'Added from a screenshot' });
       if (it.status === 'opened') setStatus(s, 'opened');
       if (loc && it.status !== 'ordered') setLoc(s, loc);
       spools++;
@@ -2220,6 +2221,54 @@ $('#view-gaps').addEventListener('click', e => {
 });
 $('#gapBox').addEventListener('click', () => $('#gapBox').classList.remove('open'));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#gapBox').classList.remove('open'); });
+
+// ---------- "When did I last add spools?": from an order (screenshot of an order, or the imported order list) or by hand ----------
+// Helps spot orders that haven't been added yet. Spools made since 2.39.0 record how (s.how); older ones are told
+// apart by the note on their "created" entry.
+function spoolHow(s) {
+  if (s.how) return s.how;
+  if (s.src) return 'order';
+  const c = (s.log || []).find(e => e.type === 'created'), n = c && c.note || '';
+  if (/^(Imported from order|Added from a screenshot)$/.test(n)) return 'order';
+  if (/^(Added|Added with \+|Added by scanning its tag)$/.test(n)) return 'manual';
+  return null;   // carried over from the old version, etc.
+}
+const addedAt = s => ((s.log || []).find(e => e.type === 'created') || {}).t || '';
+function addedSpools(how) {
+  return Object.values(state.spools).filter(s => spoolHow(s) === how && addedAt(s)).sort((a, b) => addedAt(b).localeCompare(addedAt(a)) || b.id.localeCompare(a.id));
+}
+function addedKpi(how) {
+  const list = addedSpools(how), last = list[0];
+  const label = how === 'order' ? 'Last added from an order' : 'Last spool added by hand';
+  if (!last) return `<div class="kpi kpi-btn" data-added="${how}" role="button" tabindex="0" title="${how === 'order' ? 'No spools added from an order yet' : 'No spools added by hand yet'}"><div class="v">—</div><div class="l">${label}</div></div>`;
+  const newestOrder = how === 'order' ? list.map(s => s.bought || '').filter(Boolean).sort().pop() : '';
+  const sub = how === 'order' ? (newestOrder ? ` · newest order ${esc(fmtDate(newestOrder))}` : '') : ` · #${esc(last.id)}`;
+  return `<div class="kpi kpi-btn" data-added="${how}" role="button" tabindex="0" title="Click to see which spools were added">
+    <div class="v">${esc(fmtDate(addedAt(last)))}</div><div class="l">${label}${sub}</div></div>`;
+}
+function openAdded(how) {
+  const fil = allFilaments(), byId = Object.fromEntries(fil.map(f => [f.id, f]));
+  const list = addedSpools(how);
+  const day = s => new Date(addedAt(s)).toLocaleDateString([], { month:'short', day:'numeric', year:'numeric' });
+  const groups = [];
+  for (const s of list.slice(0, 60)) { const d = day(s); const g = groups[groups.length - 1]; if (g && g.d === d) g.items.push(s); else groups.push({ d, items: [s] }); }
+  const howWords = s => { const n = ((s.log || []).find(e => e.type === 'created') || {}).note || ''; return n && n !== 'Added' ? n : (how === 'order' ? 'From an order' : 'Added by hand'); };
+  const row = s => { const f = byId[s.fid]; if (!f) return '';
+    return `<div class="it">${itemSwatch(f, '')}<span class="grow"><b>${esc(f.color)}</b> <span class="muted">${esc(f.brand)} ${esc(f.type)}${f.finish && f.finish !== 'Basic' ? ' ' + esc(f.finish) : ''} · #${esc(s.id)}</span>
+      <br><span class="muted" style="font-size:12.5px">${esc(howWords(s))}${how === 'order' && s.bought ? ` · ordered ${esc(fmtDate(s.bought))}` : ''}${s.price ? ` · ${fmt$(s.price)}` : ''} · added ${esc(new Date(addedAt(s)).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }))}</span></span></div>`; };
+  const title = how === 'order' ? 'Spools added from orders' : 'Spools added by hand';
+  const intro = how === 'order'
+    ? 'Spools added from a screenshot of an order or receipt, or from the imported order list. Compare the newest order date with your Amazon orders to see what hasn’t been added yet.'
+    : 'Spools added with +, Add filament, “Add a spool” or by scanning a spool’s tag.';
+  $('#modal').innerHTML = `<button class="x" data-close>×</button><div class="added-box"><h2>${title}</h2><p class="muted">${intro}</p>
+    ${groups.length ? groups.map((g, i) => `<h3>${i === 0 ? 'Last added: ' : ''}${esc(g.d)} <small class="muted">· ${g.items.length} spool${g.items.length === 1 ? '' : 's'}</small></h3><div class="list">${g.items.map(row).join('')}</div>`).join('')
+      + (list.length > 60 ? `<p class="muted">Showing the newest 60 of ${list.length}.</p>` : '')
+      : '<p>None yet.</p>'}</div>`;
+  openFid = null;
+  $('#overlay').classList.add('open');
+}
+document.addEventListener('click', e => { const k = e.target.closest('[data-added]'); if (k) openAdded(k.dataset.added); });
+document.addEventListener('keydown', e => { const k = e.target.closest && e.target.closest('[data-added]'); if (k && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openAdded(k.dataset.added); } });
 
 render();
 startTagScanning();

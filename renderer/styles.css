@@ -312,7 +312,7 @@ table.ctable { width: 100%; border-collapse: collapse; font-size: 12.5px; font-v
 .warn-list { font-size: 13px; color: var(--warn); margin: 8px 0; padding-left: 18px; }
 
 .history-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
-.history-head .hint { margin: 0; }
+.history-head .hint { margin: 0; flex: 1; }
 .job { border-top: 1px solid var(--line); padding: 10px 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; }
 .job .f { font-weight: 600; font-size: 14px; word-break: break-word; }
 .job .m { font-size: 12px; color: var(--muted); grid-column: 1 / -1; }

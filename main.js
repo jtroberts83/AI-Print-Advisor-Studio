@@ -45,6 +45,7 @@ const crypto = require('crypto');
 const JSZip = require('jszip');
 const fss = require('fs');
 const { fetchJobs, PrintLog, historyForPrompt } = require('./src/history');
+const PR = require('./src/printreport');
 const Spend = require('./src/spend');
 // Which feature an AI call belongs to, for the spending record: the window action that started it.
 const AI_FEATURES = { 'run-claude': 'Recommendations', 'parts-identify': 'Color remix: parts', 'remix-run': 'Color remix: schemes', 'remix-swap-run': 'Color remix: swap colors',
@@ -1842,6 +1843,7 @@ function keepInTrayOnClose(w) {
     e.preventDefault();
     w.hide();
     if (monitorWin && !monitorWin.isDestroyed()) monitorWin.close();
+    if (reportWin && !reportWin.isDestroyed()) reportWin.close();
     if (!trayNoticeShown) {
       trayNoticeShown = true;
       Notes.desktop('Still watching your printers', 'AI 3D Print Advisor Studio keeps running in the tray (by the clock) for print alerts and the 99% photo. Right-click it to quit; change this in Settings → Print monitor.').catch(() => {});
@@ -2321,6 +2323,8 @@ ipcMain.handle('ts-load', async (_e, { jobId, modelPath, plateIndex }) => { awai
     const dir = path.join(app.getPath('userData'), 'gcode-cache'); await fs.mkdir(dir, { recursive: true });
     const file = path.join(dir, crypto.createHash('sha1').update(`${job.printer}|${job.filename}|${job.start}`).digest('hex') + '.gcode');
     try {
+      // a copy cut short by an interrupted download (before 2.39.0) has no settings block at its end: fetch it again
+      if (fss.existsSync(file) && !FAKE_PRINTER && !/; (CONFIG_BLOCK_END|EXECUTABLE_BLOCK_END)/.test(await readTail(file, 2097152))) await fs.unlink(file).catch(() => {});
       if (!fss.existsSync(file)) {
         progress('Downloading the printed G-code from the printer…');
         if (FAKE_PRINTER) await fs.copyFile(path.join(FAKE_PRINTER, path.basename(job.filename)), file);
@@ -2446,6 +2450,89 @@ ipcMain.handle('history-list', async () => { await S.ready;
   return { configured: true, jobs: S.lastJobs, errors };
 });
 ipcMain.handle('history-rate', async (_e, { jobId, rating, note }) => { await S.ready; await S.printLog.rate(jobId, rating, note); return true; });
+
+
+// ---------- Print report (Print history → Print report…): its own window, so it can be printed or saved as a PDF ----------
+let reportWin = null;
+function openReportWindow() {
+  if (reportWin && !reportWin.isDestroyed()) { if (reportWin.isMinimized()) reportWin.restore(); reportWin.show(); reportWin.focus(); return; }
+  const { maximized, ...b } = savedBounds('report', 1180, 900);
+  reportWin = new BrowserWindow({
+    ...b, minWidth: 720, minHeight: 520, title: 'Print report', backgroundColor: '#ffffff', autoHideMenuBar: true, icon: appIconPath,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
+  });
+  reportWin.setMenuBarVisibility(false);
+  reportWin.loadURL('app://bundle/renderer/report/index.html');
+  reportWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  if (maximized) reportWin.maximize();
+  rememberBounds('report', reportWin);
+  reportWin.on('closed', () => { reportWin = null; });
+}
+ipcMain.handle('report-open', () => { openReportWindow(); return true; });
+// more history than the Print history tab shows (that one lists 60 per printer)
+ipcMain.handle('report-jobs', async (_e, limit) => { await S.ready;
+  const printers = await getPrinters();
+  if (!printers.some(p => p.url)) return { configured: false, jobs: [], errors: [] };
+  const n = Math.max(20, Math.min(1000, Number(limit) || 300));
+  const { jobs, errors } = FAKE_PRINTER ? { jobs: JSON.parse(await fs.readFile(path.join(FAKE_PRINTER, 'jobs.json'), 'utf8')), errors: [] } : await fetchJobs(printers, n);
+  S.reportJobs = S.printLog.decorate(jobs);
+  return { configured: true, jobs: S.reportJobs, errors };
+});
+const reportCacheDir = () => path.join(app.getPath('userData'), 'report-cache');
+const reportKey = (job) => crypto.createHash('sha1').update(`${job.printer}|${job.filename}|${job.start}`).digest('hex');
+// the settings a print used, read from the end of its G-code on the printer (kept, so each print is read once)
+ipcMain.handle('report-detail', async (_e, jobId) => { await S.ready;
+  const job = (S.reportJobs || []).find(j => j.id === jobId);
+  if (!job) throw new Error('Reload the report and try again.');
+  const file = path.join(reportCacheDir(), reportKey(job) + '.json');
+  let raw = null;
+  try { raw = JSON.parse(await fs.readFile(file, 'utf8')); } catch {}
+  if (!raw) {
+    const pconf = (await getPrinters()).find(p => p.name === job.printer);
+    if (!pconf) throw new Error('That printer isn’t in Settings anymore.');
+    const full = path.join(app.getPath('userData'), 'gcode-cache', reportKey(job) + '.gcode');   // already downloaded by Troubleshoot
+    const readLocal = FAKE_PRINTER ? (n) => readTail(path.join(FAKE_PRINTER, path.basename(job.filename)), n)
+      : fss.existsSync(full) ? (n) => readTail(full, n) : null;
+    // a copy Troubleshoot downloaded may be cut short (an interrupted download before 2.39.0): then ask the printer
+    const text = readLocal ? await PR.gcodeTail(pconf, job.filename, readLocal).catch(() => (FAKE_PRINTER ? Promise.reject(new Error('No Orca settings in this G-code.')) : PR.gcodeTail(pconf, job.filename, null)))
+      : await PR.gcodeTail(pconf, job.filename, null);
+    raw = { cfg: PR.parseConfigBlock(text.slice(text.lastIndexOf('; CONFIG_BLOCK_START'))) || {}, footer: PR.parseFooter(text.slice(Math.max(0, text.lastIndexOf('; EXECUTABLE_BLOCK_END')))) };
+    await fs.mkdir(reportCacheDir(), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(raw));
+  }
+  const used = (job.filaments || []).map(f => f.i);
+  const advisorKeys = job.run && Array.isArray(job.run.changes) ? job.run.changes.map(c => c.key) : [];
+  return { ...PR.settingsReport(raw.cfg, { used: used.length ? used : [0], advisorKeys }), footer: raw.footer };
+});
+async function readTail(file, n) {
+  const h = await fs.open(file, 'r');
+  try { const { size } = await h.stat(); const len = Math.min(size, n); const buf = Buffer.alloc(len); await h.read(buf, 0, len, size - len); return buf.toString('utf8'); }
+  finally { await h.close(); }
+}
+ipcMain.handle('report-thumb', async (_e, jobId) => { await S.ready;
+  const job = (S.reportJobs || []).find(j => j.id === jobId);
+  if (!job || !job.thumb || FAKE_PRINTER) return null;
+  const file = path.join(reportCacheDir(), reportKey(job) + '.png');
+  try { return `data:image/png;base64,${(await fs.readFile(file)).toString('base64')}`; } catch {}
+  const pconf = (await getPrinters()).find(p => p.name === job.printer);
+  if (!pconf) return null;
+  const url = await PR.thumbnail(pconf, job).catch(() => null);
+  if (url) { await fs.mkdir(reportCacheDir(), { recursive: true }); await fs.writeFile(file, Buffer.from(url.split(',')[1], 'base64')).catch(() => {}); }
+  return url;
+});
+// save the report as a PDF (what's on screen, laid out for paper)
+ipcMain.handle('report-pdf', async (e, { name, landscape } = {}) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const safe = String(name || 'Print report').replace(/[\/:*?"<>|]+/g, ' ').trim().slice(0, 120) || 'Print report';
+  const r = await dialog.showSaveDialog(w, { title: 'Save the report as a PDF', defaultPath: path.join(app.getPath('documents'), `${safe}.pdf`), filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  if (r.canceled || !r.filePath) return null;
+  const pdf = await e.sender.printToPDF({ pageSize: 'Letter', landscape: !!landscape, printBackground: true, margins: { marginType: 'custom', top: 0.5, bottom: 0.5, left: 0.5, right: 0.5 } });
+  await fs.writeFile(r.filePath, pdf);
+  return r.filePath;
+});
+ipcMain.handle('report-print', (e) => new Promise((resolve) => {
+  e.sender.print({ printBackground: true }, (ok, why) => resolve(ok ? true : (why === 'cancelled' ? null : why || false)));
+}));
 
 ipcMain.handle('show-in-folder', (_e, p) => shell.showItemInFolder(p));
 

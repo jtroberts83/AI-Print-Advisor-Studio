@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'">
+  <title>Print report</title>
+  <link rel="stylesheet" href="report.css">
+</head>
+<body>
+  <!-- on screen only: what goes in the report -->
+  <aside class="controls noprint" aria-label="Report options">
+    <div class="row">
+      <label class="grow">Report title <input id="title" type="text" value="Print report" maxlength="120"></label>
+      <div class="mode" role="radiogroup" aria-label="Report type">
+        <label><input type="radio" name="mode" value="summary" checked> Summary</label>
+        <label><input type="radio" name="mode" value="detail"> Detailed (with settings)</label>
+      </div>
+      <button class="btn" id="printBtn" title="Print on paper (or pick “Microsoft Print to PDF”)">🖨 Print…</button>
+      <button class="btn primary" id="pdfBtn">Save as PDF…</button>
+    </div>
+    <div class="row">
+      <label>From <input id="from" type="date"></label>
+      <label>To <input id="to" type="date"></label>
+      <label>Printer <select id="printer"><option value="">All printers</option></select></label>
+      <label class="grow">Name contains <input id="q" type="search" placeholder="e.g. ornament, deer, gift…"></label>
+      <label>History <select id="depth" title="How many past prints to read from each printer">
+        <option value="100">last 100 per printer</option><option value="300" selected>last 300 per printer</option><option value="1000">last 1000 per printer</option></select></label>
+    </div>
+    <div class="row">
+      <span class="lbl">Status</span>
+      <label><input type="checkbox" data-st="completed" checked> Completed</label>
+      <label><input type="checkbox" data-st="cancelled" checked> Cancelled</label>
+      <label><input type="checkbox" data-st="failed" checked> Failed</label>
+      <label><input type="checkbox" data-st="printing" checked> Printing now</label>
+      <span class="sep"></span>
+      <button class="link" id="allOn">Include all shown</button>
+      <button class="link" id="allOff">Include none</button>
+      <span class="muted" id="counts"></span>
+    </div>
+    <p class="muted small">Untick a print in the list to leave it out of the report. Your choices are remembered. The detailed report reads each print’s settings from its G-code on the printer (only the end of the file, read-only), so the G-code has to still be on the printer.</p>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+  </aside>
+
+  <main id="report" class="report"></main>
+  <script src="../monitor/derive.js"></script>
+  <script src="report.js"></script>
+</body>
+</html>

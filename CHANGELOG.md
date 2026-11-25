@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.39.0
+- **Print report** (Print history → 📄 Print report…): a window with a report of your prints, to print or save as a
+  PDF. Pick the prints by date, printer, status and name (e.g. “ornament”), untick any to leave out, and give it a
+  title (“Christmas gifts 2026”).
+  - **Summary**: totals (prints, completed/cancelled/failed, printing time, filament in metres and kg, filament cost
+    once settings are read), how far all that filament would stretch, and one row per print with its picture,
+    status, print time (and planned), filament used, material colors, and the Print Monitor's comparison (“≈ the
+    height of the Statue of Liberty!”). Prints still running show their planned amounts.
+  - **Detailed (with settings)**: also a page or two per print with the settings it really used, read from its
+    G-code on the printer: profiles, filament per toolhead (weight, length, cost), then Quality (layer heights,
+    line widths, seam, ironing…), Strength (walls, shells, infill), Speed (each feature, accelerations), Support and
+    adhesion (type, style, distances, interfaces, brim, raft), Multi-material (toolhead changes, prime tower,
+    purging) and Temperatures and cooling. Settings AI 3D Print Advisor changed are marked. Only the end of each
+    G-code is read (about 0.2 MB, read-only), and each print is read once.
+  - The history behind it reaches further back (100, 300 or 1000 prints per printer).
+- **Filament → Dashboard: when you last added spools.** Two new tiles: **Last added from an order** (with the newest
+  order date) and **Last spool added by hand**. Click either to see the spools added, newest first, grouped by day,
+  with how each was added. Compare with your Amazon orders to spot ones you haven't added yet. Works for spools
+  added before this version too; new spools record how they were added.
+- Fix: the troubleshooter could keep a G-code download that stopped part way and treat it as the whole file. The
+  size is now checked, and a cut-off copy kept from before is downloaded again.
+
 ## 2.38.0
 - **Color gaps** (new tab on the Filament screen): finds where the colors you have on hand leave medium or large
   holes, per material, with checkboxes for the finishes to include (Matte, Silk, Galaxy, Gradient, Color Change…).

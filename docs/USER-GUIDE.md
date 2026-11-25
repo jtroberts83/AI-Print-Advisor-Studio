@@ -195,7 +195,7 @@ Click **Filament** (top right). Click **Back to model** to return.
 
 - **Inventory**: every filament you own, grouped by type and color, with photos. Click one for its spools, print settings and history.
 - **Spools**: a table of every spool: sealed, opened, loaded in a printer, empty.
-- **Dashboard**: totals, average cost per roll, what's running low, what's cheaper now than you paid, what's loaded in each printer.
+- **Dashboard**: totals, average cost per roll, what's running low, what's cheaper now than you paid, what's loaded in each printer, and **when you last added spools**: the **Last added from an order** tile (spools added from a screenshot of an order or from imported orders, with the newest order date) and the **Last spool added by hand** tile (+, Add filament, Add a spool, scanning a tag). Click a tile to see which spools were added, by day. If your newest Amazon order is later than the newest order date shown, that order hasn't been added yet.
 - **Settings**: your storage places (shelves, dry boxes, printer slots), empty-spool weights for weighing, labels and backups, and whether spool tags are on.
 
 **Adding filament**
@@ -272,6 +272,15 @@ The **Color gaps** tab looks at the colors you have **on hand** (filament with a
 The gaps are ranked by **how much of the missing color range** each one would fill, with its size (medium or large) and the closest color you already have. Finding them is free and works offline. Each pick takes the ones before it into account, so the list doesn't suggest three nearly identical greens.
 
 **Find products for the top 10** has Claude search Amazon first, then the makers' own stores and other filament shops, for real 1.75 mm spools in those colors, using your API key (the estimated cost is shown on the button's line; the real cost after). The app then **opens every link itself**: products whose page is gone are left out, the rest say **✓ Link checked** (or **Link not checked** when the store blocks automatic checks). Each product shows its price as seen during the search, the store, how close its color is, and its **photo**: click the photo to enlarge it. The last report is kept, so reopening the tab costs nothing. Prices change; check the store before buying.
+
+### Print report
+
+On the **Print history** tab, **📄 Print report…** opens a report you can print or save as a PDF, for example to go with gifts or to keep a record.
+
+- Choose the prints with **From / To**, **Printer**, **Name contains** and the **Status** boxes, and untick any print in the list to leave it out. Your choices and the title are remembered.
+- **Summary**: totals (prints, printing time, filament in metres and kilograms), how far all that filament would stretch laid end to end, and a row per print with its picture, status, print time and planned time, filament used, colors, and a fun comparison like the Print Monitor's (“≈ the length of a school bus!”).
+- **Detailed (with settings)**: adds a page or two per print with the settings it really used: profiles, filament per toolhead with weight, length and cost, then Quality, Strength, Speed, Support and adhesion, Multi-material, and Temperatures and cooling. Settings the advisor changed are marked **advisor**. These come from the end of the print's G-code on the printer (read-only), so the G-code must still be on the printer. They're the whole plate's settings: changes made to single objects in Orca aren't listed separately.
+- **🖨 Print…** opens the system print dialog; **Save as PDF…** asks where to save. Prints still running show their planned amounts, because the printer only records time and filament when a print ends.
 
 ## 12. When a print fails: the troubleshooter
 
