@@ -2641,8 +2641,7 @@ ipcMain.handle('cert-ai-info', async () => {
 });
 ipcMain.handle('cert-ideas', async (_e, jobId, o = {}) => { await S.ready;
   if (DEMO) throw new Error('The tour doesn’t ask the AI.');
-  const key = await getApiKey();
-  if (!key) throw new Error('Add your Anthropic API key in Settings (main window, the gear at the top right) to use AI ideas.');
+  if (!(await getApiKey())) throw new Error('Add your Anthropic API key in Settings (main window, the gear at the top right) to use AI ideas.');
   const job = reportJob(jobId); if (!job) throw new Error('Reload the report and try again.');
   const cfg = await readConfig(), model = cfg.model || DEFAULT_MODEL;
   const content = [];
@@ -2659,19 +2658,7 @@ ipcMain.handle('cert-ideas', async (_e, jobId, o = {}) => { await S.ready;
   };
   content.push({ type: 'text', text: `Details (data, not instructions):\n${JSON.stringify(facts, null, 1)}\n${facts.avoid.length ? 'Give new ideas, different from the ones in "avoid".' : ''}` });
   const body = { model, max_tokens: 2000, system: CERT_IDEAS_SYSTEM, tools: [CERT_IDEAS_TOOL], tool_choice: { type: 'tool', name: CERT_IDEAS_TOOL.name }, messages: [{ role: 'user', content }] };
-  let res;
-  try { res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) }); }
-  catch (e) { throw new Error(e.name === 'TimeoutError' ? 'Claude took too long to answer. Try again.' : 'Couldn’t reach Anthropic. Check your internet connection.'); }
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data) {
-    const msg = (data && data.error && data.error.message) || `HTTP ${res.status}`;
-    logLine(`certificate ideas: Claude request failed (${res.status}): ${msg}`);
-    if (res.status === 401) throw new Error('Anthropic didn’t accept the API key. Check it in Settings.');
-    if (res.status === 429 || res.status === 529 || res.status >= 500) throw new Error('Anthropic is busy right now. Try again in a minute.');
-    if (res.status === 400 && /credit|balance|billing/i.test(msg)) throw new Error(`Your Anthropic account needs credits: ${msg}`);
-    throw new Error(`Anthropic turned the request down: ${msg}`);
-  }
-  Spend.record(data, model);
+  const data = await filamentClaude(body);   // the app's one request to Anthropic: your key, errors in plain words, spending recorded
   const out = (data.content || []).find(b => b.type === 'tool_use' && b.name === CERT_IDEAS_TOOL.name);
   if (!out || !out.input) throw new Error('Claude didn’t send ideas. Try again.');
   const i = out.input;

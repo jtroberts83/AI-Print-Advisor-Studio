@@ -487,9 +487,16 @@
     certControls(); renderCert(); cstatus('The original photo is back.');
   }
   // ✨ AI ideas: names and sayings from Claude (kept per print in this window's storage)
-  const IDEAS_KEY = 'aipa.certIdeas';
-  const ideasStore = () => { try { return JSON.parse(localStorage.getItem(IDEAS_KEY) || '{}'); } catch { return {}; } };
-  function saveIdeas() { try { const all = ideasStore(); all[C.job.id] = C.ideas; const keys = Object.keys(all); for (const k of keys.slice(0, Math.max(0, keys.length - 60))) delete all[k]; localStorage.setItem(IDEAS_KEY, JSON.stringify(all)); } catch {} }
+  // (names and sayings only: nothing private)
+  const IDEAS_SLOT = 'aipa.certIdeas';
+  const ideasStore = () => { try { return JSON.parse(localStorage.getItem(IDEAS_SLOT) || '{}'); } catch { return {}; } };
+  function saveIdeas() {
+    try {
+      const all = ideasStore(); all[C.job.id] = { what: C.ideas.what, names: C.ideas.names, sayings: C.ideas.sayings, spent: C.ideas.spent };
+      const ids = Object.keys(all); for (const id of ids.slice(0, Math.max(0, ids.length - 60))) delete all[id];
+      localStorage.setItem(IDEAS_SLOT, JSON.stringify(all));
+    } catch {}
+  }
   async function askIdeas() {
     if (C.ideasBusy) return;
     C.ideasBusy = true; C.ideasErr = ''; certControls();
