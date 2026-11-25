@@ -15,6 +15,16 @@
     purging) and Temperatures and cooling. Settings AI 3D Print Advisor changed are marked. Only the end of each
     G-code is read (about 0.2 MB, read-only), and each print is read once.
   - The history behind it reaches further back (100, 300 or 1000 prints per printer).
+  - **🏅 Certificate…** on each print: a colorful one-page “birth certificate” for the model, to give with it
+    (landscape, print or save as PDF). A large photo, the name you give it, To and From, an optional message, when
+    it was started and finished (date and time), time in the making, where it was printed, height, layers, layer
+    height, filament, material colors, walls and infill, and how far its filament would stretch. Six templates, each
+    with its own wording, colors, fonts and decorations: Fancy, Professional, Kids’ toy, Christmas gift, Birthday
+    gift and Rainbow. The photo: one from this PC, one taken with a phone (scan the QR code, as in the
+    troubleshooter: take a photo or pick one already taken, and it appears on the certificate), or the Print
+    Monitor’s 99 % camera photo of that print; without one, the slicer’s picture. Fill the frame or show the whole
+    photo, and move it up or down. Each print’s certificate is kept. Photos taken for a certificate never go to the
+    troubleshooter.
 - **Filament → Dashboard: when you last added spools.** Two new tiles: **Last added from an order** (with the newest
   order date) and **Last spool added by hand**. Click either to see the spools added, newest first, grouped by day,
   with how each was added. Compare with your Amazon orders to spot ones you haven't added yet. Works for spools

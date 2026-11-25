@@ -1,7 +1,7 @@
 // Print report window (Print history → Print report…). A summary of the prints you pick (status, time, filament,
 // and how far that filament would stretch, like the Print Monitor), or a detailed report with the settings each
 // print used, read from its G-code. Printed with the system dialog or saved as a PDF.
-// compare() and jobName() come from ../monitor/derive.js.
+// compare() and jobName() come from ../monitor/derive.js. Also: a certificate for one print (🏅 Certificate…).
 (() => {
   const api = window.advisor;
   const $ = (id) => document.getElementById(id);
@@ -107,7 +107,8 @@
         <td class="noprint"><input type="checkbox" data-inc="${esc(j.id)}" ${off ? '' : 'checked'} aria-label="Include ${esc(nameOf(j))}"></td>
         <td class="tcell">${thumbHtml(j)}</td>
         <td><div class="nm">${esc(nameOf(j))}</div><div class="muted small">${esc(j.printer)} · ${esc(dtStr(j.start))}</div>
-          <div class="cmp">${ruler}${esc(cmpText(j))}</div></td>
+          <div class="cmp">${ruler}${esc(cmpText(j))}</div>
+          <button class="btn certbtn noprint" data-cert="${esc(j.id)}" title="A printable certificate for this print, with a photo, To and From">🏅 Certificate…</button></td>
         <td><span class="st ${st}">${STATUS_LABEL[st]}</span>${j.rating ? `<div class="muted small">Rated: ${esc({ good: 'Good', issues: 'Had issues', failed: 'Failed' }[j.rating.rating] || '')}</div>` : ''}</td>
         <td class="num">${live(j) ? 'in progress' : esc(hm(j.printSeconds))}${j.estimatedSeconds ? `<div class="muted small">planned ${esc(hm(j.estimatedSeconds))}</div>` : ''}</td>
         <td class="num">${live(j) ? (plannedM(j) ? `<span class="muted">planned</span><br>${plannedM(j).toFixed(2)} m${plannedG(j) ? `<div class="muted small">≈ ${esc(kg(plannedG(j)))}</div>` : ''}` : '—')
@@ -239,5 +240,271 @@
     try { const f = await api.reportPdf({ name: $('title').value.trim() || 'Print report' }); if (f) status(`Saved ${f}`); }
     catch (e) { status(`Couldn’t save the PDF: ${e.message || e}`); }
   };
+
+  // =====================================================================================================
+  // Certificate: one print's "birth certificate", to give with the model. Landscape Letter, printed or saved as PDF.
+  // A photo (from this PC, a phone via the QR code, or the printer camera's 99 % photo), the name you give it,
+  // To / From, a message, and its stats. Templates set the wording, colors, fonts and decorations.
+  // =====================================================================================================
+  const TEMPLATES = {
+    fancy: { label: 'Fancy', kicker: 'An official record of an original creation', title: 'Certificate of Creation', intro: 'This is to certify that',
+      born: 'was brought into this world, one layer at a time, on', to: 'Presented to', from: 'Created by', seal: ['CERTIFIED', 'ORIGINAL'], ring: 'HANDCRAFTED · 3D PRINTED · ONE OF A KIND · ' },
+    professional: { label: 'Professional', kicker: 'Production record', title: 'Certificate of Manufacture', intro: 'This document certifies that the part',
+      born: 'was manufactured to specification and completed on', to: 'Prepared for', from: 'Manufactured by', seal: ['QUALITY', 'VERIFIED'], ring: 'ADDITIVE MANUFACTURING · INSPECTED · APPROVED · ' },
+    kids: { label: 'Kids’ toy', kicker: 'Hooray! A new friend has arrived!', title: 'Official Toy Birth Certificate', intro: 'Say hello to',
+      born: 'was born at the 3D printer on', to: 'Best friend', from: 'Made with love by', seal: ['BRAND', 'NEW TOY'], ring: 'PLAY · IMAGINE · HAVE FUN · BE KIND · ' },
+    christmas: { label: 'Christmas gift', kicker: 'Made in the holiday workshop', title: 'Certificate of Christmas Magic', intro: 'This certifies that',
+      born: 'was crafted with holiday cheer and finished on', to: 'To', from: 'From', seal: ['MERRY', 'CHRISTMAS'], ring: 'SEASON’S GREETINGS · JOY · PEACE · LOVE · ' },
+    birthday: { label: 'Birthday gift', kicker: 'A one-of-a-kind gift, made just for you', title: 'Happy Birthday!', intro: 'Specially made for your special day:',
+      born: 'came to life on', to: 'To', from: 'From', seal: ['HAPPY', 'BIRTHDAY'], ring: 'MAKE A WISH · CELEBRATE · MANY HAPPY RETURNS · ' },
+    rainbow: { label: 'Rainbow', kicker: 'Officially 3D printed', title: 'Certificate of Awesomeness', intro: 'Behold!',
+      born: 'was printed into existence on', to: 'To', from: 'From', seal: ['100%', 'AWESOME'], ring: 'COLORFUL · CREATIVE · ONE OF A KIND · ' },
+  };
+  TEMPLATES.kids.letters = ['#ff4d6d', '#fb5607', '#f4a100', '#06b88a', '#118ab2', '#8338ec'];
+  TEMPLATES.rainbow.letters = ['#e63946', '#f4a261', '#d4a93a', '#2a9d8f', '#457b9d', '#9b5de5'];
+  // each letter its own color (a gradient clipped to the text prints with a box around it)
+  const rainbowText = (s, cols) => { let i = 0; return [...s].map((ch) => (ch === ' ' ? ' ' : `<span style="color:${cols[i++ % cols.length]}">${esc(ch)}</span>`)).join(''); };
+  const C = { job: null, fields: {}, photo: null, camera: [], detail: null, openedAt: 0, qr: false, phone: [], saveT: 0 };
+
+  // a stable pseudo-random sequence per print, so decorations don't jump around between renders
+  function rng(seed) { let s = 0; for (const ch of String(seed)) s = (s * 31 + ch.charCodeAt(0)) >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+  const star = (x, y, r, fill, rot = 0) => { let d = ''; for (let i = 0; i < 10; i++) { const a = (Math.PI / 5) * i - Math.PI / 2 + rot, rr = i % 2 ? r * 0.45 : r; d += `${i ? 'L' : 'M'}${(x + rr * Math.cos(a)).toFixed(1)},${(y + rr * Math.sin(a)).toFixed(1)}`; } return `<path d="${d}Z" fill="${fill}"/>`; };
+  const flake = (x, y, r, c) => { let d = ''; for (let i = 0; i < 6; i++) { const a = (Math.PI / 3) * i, ex = x + r * Math.cos(a), ey = y + r * Math.sin(a), mx = x + r * 0.6 * Math.cos(a), my = y + r * 0.6 * Math.sin(a);
+    d += `M${x},${y}L${ex.toFixed(1)},${ey.toFixed(1)}`; for (const s of [-0.6, 0.6]) d += `M${mx.toFixed(1)},${my.toFixed(1)}L${(mx + r * 0.3 * Math.cos(a + s)).toFixed(1)},${(my + r * 0.3 * Math.sin(a + s)).toFixed(1)}`; }
+    return `<path d="${d}" stroke="${c}" stroke-width="${Math.max(1, r / 8).toFixed(1)}" stroke-linecap="round" fill="none"/>`; };
+  const balloon = (x, y, r, c) => `<path d="M${x},${y + r * 1.25} q ${-r * 0.3},${r * 0.9} ${r * 0.1},${r * 1.9}" stroke="#7a7a7a" stroke-width="1.2" fill="none"/><ellipse cx="${x}" cy="${y}" rx="${r}" ry="${r * 1.2}" fill="${c}"/><path d="M${x - 4},${y + r * 1.2 + 6} l4,-7 l4,7z" fill="${c}"/><ellipse cx="${x - r * 0.35}" cy="${y - r * 0.45}" rx="${r * 0.18}" ry="${r * 0.3}" fill="#fff" opacity=".55"/>`;
+  const holly = (x, y, s) => `<g transform="translate(${x},${y}) scale(${s})"><path d="M0,0 q18,-22 40,-6 q-8,6 -4,14 q-12,-2 -16,8 q-6,-10 -20,-16z" fill="#1f7a3a"/><path d="M0,0 q-22,-18 -40,2 q9,4 6,13 q12,-4 17,6 q4,-11 17,-21z" fill="#2e8b47"/><circle cx="-4" cy="4" r="6" fill="#c8102e"/><circle cx="6" cy="6" r="6" fill="#d7263d"/><circle cx="1" cy="-4" r="6" fill="#b30d26"/></g>`;
+  // decorations drawn over the frame, in a 1000 × 760 box
+  function decoSvg(t, seed) {
+    const R = rng(seed), W = 1000, H = 760; let g = '';
+    const edges = (n, fn) => { for (let i = 0; i < n; i++) { const side = i % 4; const u = R();
+      const [x, y] = side === 0 ? [u * W, 14 + R() * 40] : side === 1 ? [u * W, H - 14 - R() * 40] : side === 2 ? [14 + R() * 34, u * H] : [W - 14 - R() * 34, u * H]; g += fn(x, y); } };
+    if (t === 'fancy') {
+      const corner = (tx) => `<g transform="${tx}" fill="none" stroke="var(--c-gold)" stroke-width="2.2" stroke-linecap="round"><path d="M30,120 C30,60 60,30 120,30"/><path d="M44,150 C40,80 80,42 150,44"/><path d="M30,120 c10,-30 40,-30 40,0 c0,20 -25,22 -30,8"/><path d="M120,30 c-30,10 -30,40 0,40 c20,0 22,-25 8,-30"/><circle cx="58" cy="58" r="7" fill="var(--c-gold)"/></g>`;
+      g = corner('') + corner(`translate(${W},0) scale(-1,1)`) + corner(`translate(0,${H}) scale(1,-1)`) + corner(`translate(${W},${H}) scale(-1,-1)`);
+    } else if (t === 'professional') {
+      g = `<rect x="0" y="0" width="${W}" height="18" fill="var(--c-1)"/><rect x="0" y="18" width="${W}" height="5" fill="var(--c-2)"/>`;
+      for (let i = 0; i < 14; i++) g += `<path d="M${W - 230 + i * 18},${H} L${W},${H - 230 + i * 18}" stroke="var(--c-1)" stroke-opacity=".12" stroke-width="2"/>`;
+    } else if (t === 'kids') {
+      const cols = ['#ff4d6d', '#ffb703', '#06d6a0', '#118ab2', '#8338ec', '#fb5607'];
+      edges(46, (x, y) => (R() < 0.55 ? star(x, y, 9 + R() * 14, cols[Math.floor(R() * cols.length)], R()) : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(4 + R() * 8).toFixed(1)}" fill="${cols[Math.floor(R() * cols.length)]}"/>`));
+    } else if (t === 'christmas') {
+      edges(34, (x, y) => flake(+x.toFixed(1), +y.toFixed(1), 8 + R() * 12, R() < 0.5 ? '#9cc7e6' : '#c9a227'));
+      g += holly(70, 64, 1.3) + holly(W - 70, 64, 1.3) + holly(70, H - 60, 1.3) + holly(W - 70, H - 60, 1.3);
+    } else if (t === 'birthday') {
+      const cols = ['#ff006e', '#fb5607', '#ffbe0b', '#3a86ff', '#8338ec', '#06d6a0'];
+      edges(70, (x, y) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(5 + R() * 7).toFixed(1)}" height="${(3 + R() * 4).toFixed(1)}" rx="1.5" fill="${cols[Math.floor(R() * cols.length)]}" transform="rotate(${Math.round(R() * 180)} ${x.toFixed(1)} ${y.toFixed(1)})"/>`);
+      g += balloon(62, 92, 30, '#ff006e') + balloon(110, 70, 26, '#3a86ff') + balloon(W - 62, 92, 30, '#ffbe0b') + balloon(W - 112, 72, 26, '#8338ec');
+    } else {
+      const cols = ['#e63946', '#f4a261', '#e9c46a', '#2a9d8f', '#457b9d', '#9b5de5'];
+      edges(30, (x, y) => star(x, y, 7 + R() * 11, cols[Math.floor(R() * cols.length)], R()));
+    }
+    return `<svg class="deco" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${g}</svg>`;
+  }
+  // the rosette seal, with words around its edge
+  function sealSvg(tp, year) {
+    const pts = []; for (let i = 0; i < 48; i++) { const a = (Math.PI * 2 * i) / 48, r = i % 2 ? 54 : 60; pts.push(`${(64 + r * Math.cos(a)).toFixed(1)},${(64 + r * Math.sin(a)).toFixed(1)}`); }
+    return `<svg class="seal" viewBox="0 0 128 150" aria-hidden="true">
+      <path d="M40,100 L28,148 L46,136 L56,150 L64,104Z" fill="var(--c-2)"/><path d="M88,100 L100,148 L82,136 L72,150 L64,104Z" fill="var(--c-2)"/>
+      <polygon points="${pts.join(' ')}" fill="var(--c-seal)"/><circle cx="64" cy="64" r="47" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.5"/>
+      <circle cx="64" cy="64" r="34" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1"/>
+      <defs><path id="sealRing" d="M64,64 m-40,0 a40,40 0 1,1 80,0 a40,40 0 1,1 -80,0"/></defs>
+      <text font-size="7.6" font-weight="700" fill="#fff" letter-spacing="1.2"><textPath href="#sealRing">${esc(tp.ring + tp.ring)}</textPath></text>
+      <text x="64" y="58" text-anchor="middle" font-size="${tp.seal[0].length > 7 ? 9 : 11}" font-weight="800" fill="#fff">${esc(tp.seal[0])}</text>
+      <text x="64" y="71" text-anchor="middle" font-size="${tp.seal[1].length > 7 ? 9 : 11}" font-weight="800" fill="#fff">${esc(tp.seal[1])}</text>
+      <text x="64" y="83" text-anchor="middle" font-size="8" fill="#fff" opacity=".9">${esc(year)}</text></svg>`;
+  }
+
+  function certHtml() {
+    const j = C.job, f = C.fields, t = TEMPLATES[f.template] ? f.template : 'fancy', tp = TEMPLATES[t];
+    const name = (f.name || '').trim() || nameOf(j);
+    const d = C.detail && !C.detail.error ? C.detail : null;
+    const sec = (id, key) => { const s = d && d.sections.find((x) => x.id === id); const i = s && s.items.find((x) => x.key === key); return i ? i.value : ''; };
+    const dateOnly = (iso) => (iso ? new Date(iso).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : '');
+    const shortDate = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    const timeOnly = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+    const done = !live(j) && j.end;
+    const gu = gramsUsed(j), m = metres(j) || plannedM(j);
+    const colors = (j.filaments || []).filter((x) => x.color);
+    const walls = sec('strength', 'wall_loops'), infill = sec('strength', 'sparse_infill_density'), pattern = sec('strength', 'sparse_infill_pattern');
+    const stats = [
+      ['Creation started', j.start ? `${shortDate(j.start)} · ${timeOnly(j.start)}` : ''],
+      ['Creation finished', done ? `${shortDate(j.end)} · ${timeOnly(j.end)}` : live(j) ? 'Still being made…' : ''],
+      ['Time in the making', live(j) ? (j.estimatedSeconds ? `about ${hm(j.estimatedSeconds)}` : '') : hm(j.printSeconds)],
+      ['Birthplace', j.printer],
+      ['Height', j.objectHeight ? `${j.objectHeight} mm (${(j.objectHeight / 25.4).toFixed(1)} in)` : ''],
+      ['Layers', j.layers ? Number(j.layers).toLocaleString() : ''],
+      ['Layer height', j.layerHeight ? `${j.layerHeight} mm` : sec('quality', 'layer_height')],
+      ['Filament', m ? `${m.toFixed(1)} m${(gu || plannedG(j)) ? ` · ${kg(gu || plannedG(j))}` : ''}` : ''],
+      ['Material', materials(j)],
+      ['Strength', [walls && `${walls} walls`, infill && `${infill} ${String(pattern || '').toLowerCase()} infill`].filter(Boolean).join(' · ')],
+    ].filter(([, v]) => v);
+    const no = `No. ${(j.start ? j.start.slice(0, 10).replace(/-/g, '') : '0')}-${(rng(j.id)() * 1e6 | 0).toString().padStart(6, '0')}`;
+    const photo = C.photo || R.thumbs.get(j.id);
+    const fit = C.photo ? (f.fit === 'contain' ? 'contain' : 'cover') : 'contain';
+    const year = (j.end || j.start || new Date().toISOString()).slice(0, 4);
+    return `<div class="cert t-${t}">
+      ${decoSvg(t, j.id)}
+      <div class="paper">
+        <header class="chead"><div class="kicker">${esc(tp.kicker)}</div><h1>${tp.letters ? rainbowText(tp.title, tp.letters) : esc(tp.title)}</h1></header>
+        <div class="cbody">
+          <figure class="cphoto ${photo ? '' : 'none'}">${photo ? `<img src="${photo}" alt="" style="object-fit:${fit};object-position:50% ${Number.isFinite(+f.posY) ? +f.posY : 50}%">` : '<span>Add a photo</span>'}
+            ${colors.length ? `<figcaption>${colors.map((x) => `<span class="sw" style="background:${esc(x.color)}"></span>`).join('')}</figcaption>` : ''}</figure>
+          <div class="cinfo">
+            <div class="intro">${esc(tp.intro)}</div>
+            <div class="cname">${esc(name)}</div>
+            <div class="born">${esc(tp.born)} <b>${esc(dateOnly(done ? j.end : j.start))}</b></div>
+            <dl class="cstats">${stats.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+            ${m ? `<div class="cfun">${ruler}<span>Its filament laid end to end: ${esc(compare(m))}</span></div>` : ''}
+            ${f.message ? `<div class="cmsg">“${esc(f.message)}”</div>` : ''}
+          </div>
+        </div>
+        <footer class="cfoot">
+          <div class="party"><div class="val">${esc(f.to || '')}</div><div class="lbl">${esc(tp.to)}</div></div>
+          ${sealSvg(tp, year)}
+          <div class="party"><div class="val">${esc(f.from || '')}</div><div class="lbl">${esc(tp.from)}</div></div>
+        </footer>
+        <div class="cno">${esc(no)} · ${esc(j.filename)}</div>
+      </div></div>`;
+  }
+
+  function renderCert() {
+    if (!C.job) return;
+    $('cert').innerHTML = certHtml();
+    fitCert();
+  }
+  function fitCert() {
+    const el = $('cert').querySelector('.cert'); if (!el) return;
+    const w = el.offsetWidth, avail = $('cert').clientWidth - 32;
+    $('cert').style.setProperty('--z', String(Math.min(1, avail / w)));
+  }
+  addEventListener('resize', () => { if (C.job) fitCert(); });
+
+  function certControls() {
+    const f = C.fields, cur = TEMPLATES[f.template] ? f.template : 'fancy';
+    const waiting = C.phone.filter((p) => p.purpose === 'cert' && p.state === 'waiting').slice(0, 6);
+    $('certControls').innerHTML = `
+      <div class="row"><button class="btn" id="certBack">← Back to the report</button><span class="ctitle">Certificate for <b>${esc(nameOf(C.job))}</b></span>
+        <span class="grow"></span><button class="btn" id="certPrint">🖨 Print…</button><button class="btn primary" id="certPdf">Save as PDF…</button></div>
+      <div class="row tpls" role="radiogroup" aria-label="Template">${Object.entries(TEMPLATES).map(([k, v]) =>
+        `<label class="tpl t-${k} ${k === cur ? 'on' : ''}"><input type="radio" name="tpl" value="${k}" ${k === cur ? 'checked' : ''}><span class="dot"></span>${esc(v.label)}</label>`).join('')}</div>
+      <div class="row">
+        <label class="grow">Name <input id="cName" type="text" maxlength="80" placeholder="${esc(nameOf(C.job))}" value="${esc(f.name || '')}"></label>
+        <label class="grow">${esc(TEMPLATES[cur].to)} <input id="cTo" type="text" maxlength="80" value="${esc(f.to || '')}"></label>
+        <label class="grow">${esc(TEMPLATES[cur].from)} <input id="cFrom" type="text" maxlength="80" value="${esc(f.from || '')}"></label>
+      </div>
+      <div class="row"><label class="grow">Message (optional) <input id="cMsg" type="text" maxlength="240" placeholder="e.g. Merry Christmas! Made just for you." value="${esc(f.message || '')}"></label></div>
+      <div class="row">
+        <span class="lbl">Photo</span>
+        <label class="btn">🖼 Choose a photo…<input id="cFile" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
+        <button class="btn" id="cPhone">📱 ${C.qr ? 'Hide the QR code' : 'Take one with your phone'}</button>
+        ${C.camera.length ? `<button class="btn" id="cCam" title="The Print Monitor’s photo from the printer’s camera, taken at 99 %">📷 Printer camera photo</button>` : ''}
+        ${C.photo ? `<button class="link" id="cNoPhoto">Use the slicer picture instead</button>
+          <label>Show <select id="cFit"><option value="cover" ${f.fit !== 'contain' ? 'selected' : ''}>Fill the frame</option><option value="contain" ${f.fit === 'contain' ? 'selected' : ''}>The whole photo</option></select></label>
+          ${f.fit !== 'contain' ? `<label>Up / down <input id="cPos" type="range" min="0" max="100" value="${Number.isFinite(+f.posY) ? +f.posY : 50}"></label>` : ''}` : ''}
+      </div>
+      ${waiting.length ? `<div class="row phonewait"><span class="muted small">From your phone (click to use):</span>${waiting.map((p) => `<button class="pw" data-pw="${esc(p.id)}" title="${esc(new Date(p.at).toLocaleString())} · ${esc(p.device)}"><img data-pthumb="${esc(p.id)}" alt="Phone photo"></button>`).join('')}</div>` : ''}
+      <div id="cQr" class="qr ${C.qr ? '' : 'hidden'}"></div>
+      <div class="status" id="cStatus" role="status" aria-live="polite"></div>`;
+    for (const img of $('certControls').querySelectorAll('[data-pthumb]')) api.tsPhotoData(img.dataset.pthumb).then((u) => { if (u) img.src = u; }).catch(() => {});
+    if (C.qr) showQr();
+  }
+  const cstatus = (t) => { const el = $('cStatus'); if (el) el.textContent = t; };
+
+  function saveFields(photo) {
+    clearTimeout(C.saveT);
+    const run = () => api.certSet(C.job.id, C.fields, photo).catch((e) => cstatus(`Couldn’t save: ${e.message || e}`));
+    if (photo !== undefined) return run();
+    C.saveT = setTimeout(run, 400);
+  }
+  async function setPhoto(dataUrl) {
+    C.photo = dataUrl; C.fields.posY = 50;
+    if (dataUrl && C.fields.fit !== 'contain') C.fields.fit = 'cover';
+    await saveFields(dataUrl);
+    certControls(); renderCert();
+  }
+  // a photo from this PC: made smaller (2400 px on the long side, JPEG), which also drops its location data
+  async function shrinkPhoto(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => bad(new Error('That picture can’t be opened (use JPEG, PNG or WebP).')); im.src = url; });
+      const sc = Math.min(1, 2400 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * sc); c.height = Math.round(img.naturalHeight * sc);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.9);
+    } finally { URL.revokeObjectURL(url); }
+  }
+  async function usePhonePhoto(id) {
+    const u = await api.tsPhotoData(id).catch(() => null);
+    if (!u) { cstatus('That photo is no longer on the PC.'); return; }
+    await api.tsPhotosState([id], 'used').catch(() => {});
+    await setPhoto(u);
+    cstatus('✓ Photo from your phone added.');
+  }
+  async function showQr() {
+    const box = $('cQr'); if (!box) return;
+    let r;
+    try { r = await api.tsPhoneLink('cert'); } catch (e) { box.innerHTML = `<p class="warn">${esc(e.message || e)}</p>`; return; }
+    if (r.tour) { box.innerHTML = '<p>The tour can’t take photos with a phone.</p>'; return; }
+    if (r.off) { box.innerHTML = `<p><b>Phone access is off.</b> Turn it on in the main window: <b>Settings → Phone access</b>. Photos then come straight here over your home Wi-Fi (nothing goes through the internet).${r.error ? ` <span class="warn">${esc(r.error)}</span>` : ''}</p>`; return; }
+    if (!window.qrcode) { box.innerHTML = `<p>Open this on your phone: ${esc(r.url)}</p>`; return; }
+    const q = window.qrcode(0, 'M'); q.addData(r.url); q.make();
+    box.innerHTML = `<img alt="QR code: opens the photo page on your phone" src="${q.createDataURL(5, 2)}"><div><p><b>Scan this with your phone’s camera.</b></p>
+      <ol><li>Tap <b>📷 Take a photo</b>, or choose one you already took.</li><li>It appears on the certificate a moment later.</li>${r.paired ? '' : '<li>The first time, the phone asks to pair with this PC (tap <b>Pair this phone</b>).</li>'}</ol>
+      <p class="muted small">The phone must be on the same Wi-Fi as this PC. This code works for 15 minutes.</p></div>`;
+  }
+
+  async function openCert(jobId) {
+    const j = R.jobs.find((x) => x.id === jobId); if (!j) return;
+    Object.assign(C, { job: j, fields: {}, photo: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false });
+    try { const g = await api.certGet(j.id); C.fields = g.fields || {}; C.photo = g.photo; C.camera = g.camera || []; } catch (e) { status(String(e.message || e)); }
+    try { C.phone = await api.tsPhotosList(); } catch { C.phone = []; }
+    document.body.classList.add('cert-mode');
+    $('certControls').hidden = false; $('cert').hidden = false;
+    document.title = `Certificate · ${(C.fields.name || '').trim() || nameOf(j)}`;
+    certControls(); renderCert(); scrollTo(0, 0);
+    if (!R.thumbs.has(j.id)) api.reportThumb(j.id).then((t) => { R.thumbs.set(j.id, t); if (C.job === j) renderCert(); }).catch(() => {});
+    if (!C.detail) api.reportDetail(j.id).then((d) => { R.detail.set(j.id, d); if (C.job === j) { C.detail = d; renderCert(); } }).catch((e) => { C.detail = { error: e.message }; });
+  }
+  function closeCert() {
+    C.job = null; C.qr = false;
+    document.body.classList.remove('cert-mode');
+    $('certControls').hidden = true; $('cert').hidden = true; $('cert').innerHTML = '';
+    render();
+  }
+  $('report').addEventListener('click', (e) => { const b = e.target.closest('[data-cert]'); if (b) openCert(b.dataset.cert); });
+  $('certControls').addEventListener('input', (e) => {
+    const t = e.target, f = C.fields;
+    if (t.id === 'cName') f.name = t.value; else if (t.id === 'cTo') f.to = t.value; else if (t.id === 'cFrom') f.from = t.value;
+    else if (t.id === 'cMsg') f.message = t.value; else if (t.id === 'cPos') f.posY = +t.value; else return;
+    saveFields(); renderCert();
+  });
+  $('certControls').addEventListener('change', async (e) => {
+    const t = e.target;
+    if (t.name === 'tpl') { C.fields.template = t.value; saveFields(); certControls(); renderCert(); }
+    else if (t.id === 'cFit') { C.fields.fit = t.value; saveFields(); certControls(); renderCert(); }
+    else if (t.id === 'cFile' && t.files[0]) { try { cstatus('Adding the photo…'); await setPhoto(await shrinkPhoto(t.files[0])); cstatus('✓ Photo added.'); } catch (err) { cstatus(err.message || String(err)); } }
+  });
+  $('certControls').addEventListener('click', async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'certBack') closeCert();
+    else if (b.id === 'cPhone') { C.qr = !C.qr; certControls(); }
+    else if (b.id === 'cCam') { const u = await api.certCameraPhoto(C.job.id, C.camera[0].id).catch(() => null); if (u) { await setPhoto(u); cstatus('✓ The printer camera’s photo is on the certificate.'); } else cstatus('That camera photo isn’t on this PC anymore.'); }
+    else if (b.id === 'cNoPhoto') { await setPhoto(null); }
+    else if (b.dataset.pw) usePhonePhoto(b.dataset.pw);
+    else if (b.id === 'certPrint') { const r = await api.reportPrint({ landscape: true }); if (r && r !== true) cstatus(`Not printed: ${r}`); }
+    else if (b.id === 'certPdf') {
+      const nm = (C.fields.name || '').trim() || nameOf(C.job);
+      try { const p = await api.reportPdf({ name: `${nm} - certificate`, landscape: true }); if (p) cstatus(`Saved ${p}`); } catch (err) { cstatus(`Couldn’t save the PDF: ${err.message || err}`); }
+    }
+  });
+  // photos arriving from a phone while this certificate is open: the newest one taken for a certificate goes on it
+  if (api.onTsPhotos) api.onTsPhotos((list) => {
+    C.phone = list;
+    if (!C.job) return;
+    const fresh = list.filter((p) => p.purpose === 'cert' && p.state === 'waiting' && p.at >= C.openedAt - 5000).sort((a, b) => b.at - a.at)[0];
+    if (fresh) usePhonePhoto(fresh.id); else certControls();
+  });
+
   load();
 })();

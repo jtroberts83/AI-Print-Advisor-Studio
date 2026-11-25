@@ -179,13 +179,15 @@ class PhoneServer extends EventEmitter {
   // The troubleshooter's "Take photos with your phone" QR code: the photo page on the plain address (it opens on every
   // phone, before it trusts the certificate). A paired phone just uses it (moving to the secure address if it's paired
   // there); a phone that isn't paired yet pairs with the code in it (single use, 15 minutes) and lands back on the page.
-  newSnapLink() {
+  // purpose 'cert': the photo page for a print's certificate (Print report) instead of the troubleshooter
+  newSnapLink(purpose) {
+    const cert = purpose === 'cert';
     const code = token();
     for (const [c, e] of this.codes) if (e.expires < Date.now()) this.codes.delete(c);
-    this.codes.set(code, { expires: Date.now() + PAIR_MS, next: 'snap' });
+    this.codes.set(code, { expires: Date.now() + PAIR_MS, next: cert ? 'snap-cert' : 'snap' });
     const ip = lanAddresses()[0];
     const base = ip ? `http://${ip}:${this.cfg.port}` : this.urls().name;
-    return { url: `${base}/phone/snap.html?c=${code}`, expires: Date.now() + PAIR_MS, paired: (this.cfg.devices || []).length };
+    return { url: `${base}/phone/snap.html?c=${code}${cert ? '&for=cert' : ''}`, expires: Date.now() + PAIR_MS, paired: (this.cfg.devices || []).length };
   }
   removeDevice(id) {
     const c = this.cfg;
@@ -261,7 +263,7 @@ class PhoneServer extends EventEmitter {
     this.emit('status', this.status());
     this.log(`phone access: paired ${dev.name}${entry.deviceId ? ' (another address)' : ''} on ${req.headers.host} (${String(req.headers['user-agent'] || '').slice(0, 160)})`);
     res.setHeader('Set-Cookie', `${COOKIE}=${t}; Path=/; Max-Age=315360000; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`);
-    const next = entry.next === 'snap' ? `/phone/snap.html#k=${t}` : `/app/index.html${!entry.deviceId || entry.welcome ? '?paired=1' : ''}#k=${t}`;
+    const next = entry.next === 'snap' ? `/phone/snap.html#k=${t}` : entry.next === 'snap-cert' ? `/phone/snap.html?for=cert#k=${t}` : `/app/index.html${!entry.deviceId || entry.welcome ? '?paired=1' : ''}#k=${t}`;
     res.writeHead(303, { location: next, 'cache-control': 'no-store' });
     return res.end();
   }
@@ -432,8 +434,8 @@ class PhoneServer extends EventEmitter {
         if (p === '/api/ts-photos' && this.api.photos) {
           const b = await this.body(req, 22 * 1024 * 1024);   // a picture of up to 15 MB, as base64
           if (!b || typeof b.data !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(b.data)) return this.send(res, 400, { error: 'No picture.' });
-          const photo = await this.api.photos.add({ buf: Buffer.from(b.data, 'base64'), name: b.name, device: dev.name });
-          this.log(`phone access: troubleshooter photo from ${dev.name}`);
+          const photo = await this.api.photos.add({ buf: Buffer.from(b.data, 'base64'), name: b.name, device: dev.name, purpose: b.purpose === 'cert' ? 'cert' : 'ts' });
+          this.log(`phone access: ${photo.purpose === 'cert' ? 'certificate' : 'troubleshooter'} photo from ${dev.name}`);
           return this.send(res, 200, { photo });
         }
         if (p === '/api/ts-photos/remove' && this.api.photos) {

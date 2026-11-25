@@ -11,7 +11,15 @@
   let KEY = null;
   try { KEY = localStorage.getItem('aipaKey'); } catch {}
   const code = new URLSearchParams(location.search).get('c');
-  if (m || code) history.replaceState(null, '', location.pathname);   // the key and the pairing code don't stay in the address
+  // ?for=cert: the photo is for a print's certificate (Print report), not the troubleshooter
+  const CERT = new URLSearchParams(location.search).get('for') === 'cert';
+  if (m || code) history.replaceState(null, '', location.pathname + (CERT ? '?for=cert' : ''));   // the key and the pairing code don't stay in the address
+  if (CERT) {
+    document.title = 'Certificate photo';
+    document.querySelector('h1').textContent = 'A photo for the certificate';
+    document.querySelector('.sub').innerHTML = 'It goes straight to the certificate you have open in <b>AI 3D Print Advisor Studio</b> on your PC. The newest photo is used.';
+    document.querySelector('.tips').innerHTML = 'Tips: put the model on a plain background in good light (near a window works well), fill the frame, and hold the phone steady.';
+  }
   const auth = KEY ? { 'x-aipa-key': KEY } : {};
 
   function say(html, bad) { const el = $('msg'); el.innerHTML = html; el.className = `msg${bad ? ' bad' : ''}`; el.hidden = !html; }
@@ -31,7 +39,7 @@
   async function notPaired(j) {
     if (j.secure && location.protocol === 'http:') {
       const ok = await fetch(`${j.secure}/ping`, { cache: 'no-store', signal: AbortSignal.timeout(4000) }).then(x => x.ok, () => false);
-      if (ok) { location.replace(`${j.secure}/phone/snap.html${code ? `?c=${encodeURIComponent(code)}` : ''}`); return; }
+      if (ok) { location.replace(`${j.secure}/phone/snap.html${code ? `?c=${encodeURIComponent(code)}${CERT ? '&for=cert' : ''}` : CERT ? '?for=cert' : ''}`); return; }
     }
     if (code) { location.replace(`/pair?c=${encodeURIComponent(code)}`); return; }
     say('This phone isn’t paired with the app yet. On your PC, open the print troubleshooter, click <b>📱 Take photos with your phone</b> and scan the QR code with this phone.', true);
@@ -40,12 +48,13 @@
   // ---- the list of photos (newest first), with what happened to each
   let photos = [];
   const uploads = [];   // { tmp, url, state: 'up' | 'bad', error }
-  const STATE = { waiting: ['', 'On the PC, waiting for the troubleshooter'], added: ['ok', 'In the troubleshooter'], sent: ['ok', 'Sent to Claude with a diagnosis'] };
+  const STATE = { waiting: ['', 'On the PC, waiting for the troubleshooter'], added: ['ok', 'In the troubleshooter'], sent: ['ok', 'Sent to Claude with a diagnosis'], used: ['ok', 'On a certificate'] };
+  const CERT_WAIT = ['', 'On the PC, for a certificate'];
   function render() {
     const rows = [
       ...uploads.map(u => `<li><img src="${esc(u.url)}" alt=""><span class="st ${esc(u.state)}"><b>${u.state === 'up' ? 'Sending…' : 'Not sent'}</b>${u.error ? `<br>${esc(u.error)}` : ''}</span><button type="button" data-drop="${esc(u.tmp)}" aria-label="Remove" ${u.state === 'up' ? 'disabled' : ''}>✕</button></li>`),
       ...photos.map(p => {
-        const [cls, text] = STATE[p.state] || STATE.waiting;
+        const [cls, text] = p.purpose === 'cert' && p.state === 'waiting' ? CERT_WAIT : STATE[p.state] || STATE.waiting;
         return `<li><img src="/api/ts-photos/${esc(p.id)}?k=${esc(encodeURIComponent(KEY || ''))}" alt="" loading="lazy"><span class="st ${cls}"><b>${esc(text)}</b><br>${esc(new Date(p.at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }))} · ${esc(p.device)}</span><button type="button" data-del="${esc(p.id)}" aria-label="Delete this photo">✕</button></li>`;
       }),
     ];
@@ -87,7 +96,7 @@
     uploads.unshift(u); render();
     try {
       const blob = await shrink(file);
-      await call('/api/ts-photos', { name: (file.name || 'Phone photo').replace(/\.[^.]+$/, ''), data: await b64(blob) });
+      await call('/api/ts-photos', { name: (file.name || 'Phone photo').replace(/\.[^.]+$/, ''), data: await b64(blob), purpose: CERT ? 'cert' : undefined });
       uploads.splice(uploads.indexOf(u), 1); URL.revokeObjectURL(u.url);
       await refresh();
       return true;
@@ -107,7 +116,8 @@
         if (files.length > 1) say(`Sending ${i + 1} of ${files.length}…`);
         if (await send(f)) ok++;
       }
-      if (files.length > 1) say(ok ? `✓ Sent ${ok} of ${files.length} photos to your PC. Up to 4 go into the troubleshooter; the rest wait there.` : 'None of them could be sent: see below.', !ok);
+      if (files.length > 1) say(ok ? `✓ Sent ${ok} of ${files.length} photos to your PC.${CERT ? ' The newest one goes on the certificate.' : ' Up to 4 go into the troubleshooter; the rest wait there.'}` : 'None of them could be sent: see below.', !ok);
+      else if (CERT && ok) say('✓ Sent. It’s on the certificate on your PC now.');
     });
   }
 

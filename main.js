@@ -1577,17 +1577,17 @@ const Phone = new PhoneServer({
 });
 Phone.on('status', (s) => toWindow('phone-status', s));
 // a phone sent, or someone removed, a troubleshooter photo: the troubleshooter and the phones' photo pages update
-Photos.on('change', (list) => { toWindow('ts-photos', list); Phone.broadcast('ts-photos', list); });
+Photos.on('change', (list) => { toWindow('ts-photos', list); if (reportWin && !reportWin.isDestroyed()) reportWin.webContents.send('ts-photos', list); Phone.broadcast('ts-photos', list); });
 ipcMain.handle('ts-photos-list', () => (DEMO ? [] : Photos.list()));
 ipcMain.handle('ts-photo-data', (_e, id) => (DEMO ? null : Photos.dataUrl(id)));
 ipcMain.handle('ts-photos-state', (_e, ids, st) => (DEMO ? [] : Photos.setState(ids, st)));
 ipcMain.handle('ts-photos-release', () => (DEMO ? [] : Photos.release()));
 ipcMain.handle('ts-photos-remove', (_e, id) => (DEMO ? [] : Photos.remove(id)));
 // the troubleshooter's QR code for taking photos with a phone
-ipcMain.handle('ts-phone-link', () => {
+ipcMain.handle('ts-phone-link', (_e, purpose) => {
   if (DEMO) return { tour: true };
   if (!phoneCfg.enabled || !Phone.http) return { off: true, error: Phone.error || null };
-  return Phone.newSnapLink();
+  return Phone.newSnapLink(purpose === 'cert' ? 'cert' : null);
 });
 // every change to the inventory (from the app or a phone) tells the other screens to refresh
 Fil.onChange = (rev) => { toWindow('filament-changed', { rev }); Phone.broadcast('changed', { rev }); };
@@ -2520,18 +2520,80 @@ ipcMain.handle('report-thumb', async (_e, jobId) => { await S.ready;
   if (url) { await fs.mkdir(reportCacheDir(), { recursive: true }); await fs.writeFile(file, Buffer.from(url.split(',')[1], 'base64')).catch(() => {}); }
   return url;
 });
+
+// ---------- certificates (Print report → 🏅 Certificate): a printable "birth certificate" for one print ----------
+// Kept per print in the app's data folder: the text typed (name, to, from, message, template) and the chosen photo.
+const certDir = () => path.join(app.getPath('userData'), 'certificates');
+const reportJob = (jobId) => (S.reportJobs || []).find(j => j.id === jobId);
+const PHOTO_DATA = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/;
+function certText(v, max) { return String(v ?? '').replace(/[\u0000-\u001f]/g, ' ').slice(0, max); }
+// the Print Monitor's 99 % photo of this print, while it was still on the bed (Snapmaker U1 camera)
+async function cameraPhotos(job) {
+  const root = path.join(app.getPath('userData'), 'monitor', 'gallery'), out = [];
+  const base = (f) => String(f || '').split('/').pop().toLowerCase();
+  const t0 = job.start ? Date.parse(job.start) / 1000 - 600 : 0, t1 = job.end ? Date.parse(job.end) / 1000 + 3600 : Date.now() / 1000 + 60;
+  for (const pid of await fs.readdir(root).catch(() => [])) {
+    for (const f of await fs.readdir(path.join(root, pid)).catch(() => [])) {
+      if (!f.endsWith('.json')) continue;
+      try {
+        const m = JSON.parse(await fs.readFile(path.join(root, pid, f), 'utf8'));
+        if (m.printer_name === job.printer && base(m.job) === base(job.filename) && m.taken >= t0 && m.taken <= t1 && /^[\w .()#&,'+-]+\.jpg$/.test(m.file)) out.push({ pid, file: m.file, taken: m.taken });
+      } catch {}
+    }
+  }
+  return out.sort((a, b) => b.taken - a.taken);
+}
+ipcMain.handle('cert-get', async (_e, jobId) => { await S.ready;
+  const job = reportJob(jobId); if (!job) throw new Error('Reload the report and try again.');
+  const k = reportKey(job);
+  let fields = {};
+  try { fields = JSON.parse(await fs.readFile(path.join(certDir(), k + '.json'), 'utf8')); } catch {}
+  let photo = null;
+  for (const ext of ['jpg', 'png', 'webp']) {
+    try { photo = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${(await fs.readFile(path.join(certDir(), `${k}.${ext}`))).toString('base64')}`; break; } catch {}
+  }
+  return { fields, photo, camera: FAKE_PRINTER ? [] : (await cameraPhotos(job)).map(c => ({ id: `${c.pid}/${c.file}`, taken: c.taken })) };
+});
+ipcMain.handle('cert-camera-photo', async (_e, jobId, id) => { await S.ready;
+  const job = reportJob(jobId); if (!job) return null;
+  const c = (await cameraPhotos(job)).find(x => `${x.pid}/${x.file}` === id);
+  if (!c) return null;
+  return `data:image/jpeg;base64,${(await fs.readFile(path.join(app.getPath('userData'), 'monitor', 'gallery', c.pid, c.file))).toString('base64')}`;
+});
+// fields: { name, to, from, message, template, fit }; photo: a data: URL (new photo), null (remove it) or undefined (keep)
+ipcMain.handle('cert-set', async (_e, jobId, fields, photo) => { await S.ready;
+  const job = reportJob(jobId); if (!job) throw new Error('Reload the report and try again.');
+  const k = reportKey(job);
+  await fs.mkdir(certDir(), { recursive: true });
+  const f = fields && typeof fields === 'object' ? fields : {};
+  const clean = { name: certText(f.name, 80), to: certText(f.to, 80), from: certText(f.from, 80), message: certText(f.message, 240),
+    template: certText(f.template, 20), fit: f.fit === 'contain' ? 'contain' : 'cover', posY: Number.isFinite(+f.posY) ? Math.max(0, Math.min(100, +f.posY)) : 50 };
+  await fs.writeFile(path.join(certDir(), k + '.json'), JSON.stringify(clean));
+  if (photo !== undefined) {
+    for (const ext of ['jpg', 'png', 'webp']) await fs.unlink(path.join(certDir(), `${k}.${ext}`)).catch(() => {});
+    const m = photo && PHOTO_DATA.exec(photo);
+    if (m) {
+      const buf = Buffer.from(m[2], 'base64');
+      if (buf.length > 20 * 1024 * 1024) throw new Error('That photo is too large.');
+      await fs.writeFile(path.join(certDir(), `${k}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`), buf);
+    }
+  }
+  return true;
+});
+
 // save the report as a PDF (what's on screen, laid out for paper)
 ipcMain.handle('report-pdf', async (e, { name, landscape } = {}) => {
   const w = BrowserWindow.fromWebContents(e.sender);
   const safe = String(name || 'Print report').replace(/[\/:*?"<>|]+/g, ' ').trim().slice(0, 120) || 'Print report';
   const r = await dialog.showSaveDialog(w, { title: 'Save the report as a PDF', defaultPath: path.join(app.getPath('documents'), `${safe}.pdf`), filters: [{ name: 'PDF', extensions: ['pdf'] }] });
   if (r.canceled || !r.filePath) return null;
-  const pdf = await e.sender.printToPDF({ pageSize: 'Letter', landscape: !!landscape, printBackground: true, margins: { marginType: 'custom', top: 0.5, bottom: 0.5, left: 0.5, right: 0.5 } });
+  const m = landscape ? 0.3 : 0.5;   // a certificate (landscape) uses the page almost to the edge
+  const pdf = await e.sender.printToPDF({ pageSize: 'Letter', landscape: !!landscape, printBackground: true, margins: { marginType: 'custom', top: m, bottom: m, left: m, right: m } });
   await fs.writeFile(r.filePath, pdf);
   return r.filePath;
 });
-ipcMain.handle('report-print', (e) => new Promise((resolve) => {
-  e.sender.print({ printBackground: true }, (ok, why) => resolve(ok ? true : (why === 'cancelled' ? null : why || false)));
+ipcMain.handle('report-print', (e, o) => new Promise((resolve) => {
+  e.sender.print({ printBackground: true, landscape: !!(o && o.landscape) }, (ok, why) => resolve(ok ? true : (why === 'cancelled' ? null : why || false)));
 }));
 
 ipcMain.handle('show-in-folder', (_e, p) => shell.showItemInFolder(p));

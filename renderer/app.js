@@ -2608,7 +2608,7 @@ async function tsPhoneOpen() {
     await api.tsPhotosRelease();
     TS.phoneList = await api.tsPhotosList();
     renderTsPhoneWait();
-    const recent = TS.phoneList.filter(p => p.state === 'waiting' && Date.now() - p.at < 2 * 3600 * 1000).reverse();   // oldest first
+    const recent = TS.phoneList.filter(p => p.state === 'waiting' && p.purpose !== 'cert' && Date.now() - p.at < 2 * 3600 * 1000).reverse();   // oldest first
     if (recent.length) await tsAddPhonePhotos(recent);
   } catch {}
 }
@@ -2620,7 +2620,7 @@ if (api.onTsPhotos) api.onTsPhotos(async (list) => {
   const before = TS.photos.length;
   TS.photos = TS.photos.filter(p => !p.phoneId || ids.has(p.phoneId));
   if (TS.photos.length !== before) renderTsPhotos(); else renderTsPhoneWait();
-  const fresh = list.filter(p => p.state === 'waiting' && !known.has(p.id)).reverse();
+  const fresh = list.filter(p => p.state === 'waiting' && p.purpose !== 'cert' && !known.has(p.id)).reverse();
   if (fresh.length) {
     await tsAddPhonePhotos(fresh);
     if (!$('tsPhoneQr').classList.contains('hidden')) $('tsPhoneQr').querySelector('.live').textContent = `✓ ${fresh.length === 1 ? 'A photo' : `${fresh.length} photos`} arrived. Take more, or close this.`;
@@ -2629,7 +2629,7 @@ if (api.onTsPhotos) api.onTsPhotos(async (list) => {
 // the phone's other photos, not in this troubleshooter: click one to add it
 function renderTsPhoneWait() {
   const box = $('tsPhoneWait');
-  const wait = TS.phoneList.filter(p => p.state === 'waiting' && !TS.photos.some(x => x.phoneId === p.id)).slice(0, 8);
+  const wait = TS.phoneList.filter(p => p.state === 'waiting' && p.purpose !== 'cert' && !TS.photos.some(x => x.phoneId === p.id)).slice(0, 8);
   box.classList.toggle('hidden', !wait.length);
   if (!wait.length) { box.innerHTML = ''; return; }
   box.innerHTML = `Taken with your phone earlier (click one to add it):<div class="row">${wait.map(p => `<span class="wp" role="button" tabindex="0" data-id="${p.id}" title="${esc(new Date(p.at).toLocaleString())} · ${esc(p.device)}"><img alt="Photo from your phone" data-thumb="${p.id}"><button class="x" data-del="${p.id}" aria-label="Delete this photo">×</button></span>`).join('')}</div>`;

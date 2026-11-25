@@ -325,3 +325,27 @@ test('troubleshooter photos: paired phones only, real pictures only, and the QR 
   photos.setState(photos.list().map(p => p.id), 'added');
   assert.strictEqual(new PhotoInbox(photos.dir).list()[0].state, 'waiting');
 });
+
+test('certificate photos: their own QR link, pairing lands back on the certificate page, tagged so the troubleshooter skips them', async (t) => {
+  const { PhotoInbox } = require('../src/phone/photos');
+  const photos = new PhotoInbox(fs.mkdtempSync(path.join(os.tmpdir(), 'aipa-ph-')));
+  const env = await setup(t, { photos });
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)]);
+  const link = env.s.newSnapLink('cert');
+  assert.match(link.url, /\/phone\/snap\.html\?c=[A-Za-z0-9_-]{40,}&for=cert$/);
+  const r = await env.post(new URL(link.url).searchParams.get('c'));
+  assert.match(r.headers.location, /^\/phone\/snap\.html\?for=cert#k=[A-Za-z0-9_-]{40,}$/);
+  const auth = { 'x-aipa-key': r.headers.location.split('#k=')[1] };
+  const up = (purpose) => req(env.port, '/api/ts-photos', { method: 'POST', headers: { ...JSONH, ...auth }, body: { name: 'IMG', data: jpeg.toString('base64'), purpose } });
+  const cert = JSON.parse((await up('cert')).body).photo;
+  const ts = JSON.parse((await up(undefined)).body).photo;
+  const odd = JSON.parse((await up('<script>')).body).photo;
+  assert.strictEqual(cert.purpose, 'cert');
+  assert.strictEqual(ts.purpose, 'ts');
+  assert.strictEqual(odd.purpose, 'ts', 'anything else is a troubleshooter photo');
+  // used on a certificate: stays that way when a troubleshooter closes
+  photos.setState([cert.id], 'used');
+  photos.release();
+  assert.strictEqual(photos.list().find((p) => p.id === cert.id).state, 'used');
+  assert.strictEqual(new PhotoInbox(photos.dir).list().find((p) => p.id === cert.id).purpose, 'cert', 'kept across a restart');
+});
