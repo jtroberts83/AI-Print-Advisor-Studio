@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.45.1
+- Certificates, **Combine prints**: for a long project printed over weeks, the list now shows prints finished within a
+  week of **any** print you've ticked (it grows as you tick pieces), and **Find a print by name** searches all the
+  completed prints read. Ticked prints always stay in the list so they can be unticked.
+
 ## 2.45.0
 - Certificates for a model printed in **several prints (plates)**: **🧩 Multi-plate print? Combine prints…** lists the
   completed prints with a similar name first, then every other completed print finished within a week; tick the ones

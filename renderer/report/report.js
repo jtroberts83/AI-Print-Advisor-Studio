@@ -298,14 +298,20 @@
   const words = (j) => nameOf(j).toLowerCase().replace(/_?plate_?\d+/g, ' ').split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !GENERIC.has(w) && !/^v?\d+$/.test(w));
   const stemOf = (j) => nameOf(j).toLowerCase().replace(/[_\s-]*plate[_\s-]*\d+\s*$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const whenOf = (j) => Date.parse(j.end || j.start) || 0;
-  // prints that may belong with this one: named alike first, then everything else finished within a week
-  function plateCandidates(j) {
+  // prints that may belong with this one: named alike first, then everything else finished within a week of this
+  // print or of any print already ticked (so a long project spread over weeks can be gathered), then a name search
+  function plateCandidates(j, q = '') {
     const ws = new Set(words(j)), st = stemOf(j), t = whenOf(j);
+    const ticked = new Set(Array.isArray(C.fields && C.fields.combine) ? C.fields.combine : []);
+    const anchors = [j, ...R.jobs.filter((x) => ticked.has(x.id))].map(whenOf);
     const others = R.jobs.filter((x) => x.id !== j.id && x.status === 'completed');
     const close = (a, b) => Math.abs(whenOf(a) - t) - Math.abs(whenOf(b) - t);
     const same = others.filter((x) => stemOf(x) === st || words(x).some((w) => ws.has(w))).sort(close);
-    const near = others.filter((x) => !same.includes(x) && Math.abs(whenOf(x) - t) <= 7 * 864e5).sort(close);
-    return { same, near };
+    const near = others.filter((x) => !same.includes(x) && anchors.some((a) => Math.abs(whenOf(x) - a) <= 7 * 864e5)).sort(close);
+    const qq = q.trim().toLowerCase();
+    const found = qq ? others.filter((x) => !same.includes(x) && !near.includes(x) && nameOf(x).toLowerCase().includes(qq)).sort(close) : [];
+    const lost = others.filter((x) => ticked.has(x.id) && !same.includes(x) && !near.includes(x) && !found.includes(x));   // ticked: always shown
+    return { same, near, found, lost };
   }
   // this print and the ones combined with it (completed ones still in the history read here)
   function partsOf() {
@@ -325,16 +331,22 @@
       api.reportDetail(x.id).then((d) => { R.detail.set(x.id, d); if (C.job) renderCert(); }).catch((e) => { R.detail.set(x.id, { error: e.message }); if (C.job) renderCert(); });
     }
   }
+  function plateLists(same, near, found, lost, row) {
+    return `${C.plateQ ? (found.length ? `<h4>Other prints matching “${esc(C.plateQ)}”</h4>${found.slice(0, 40).map(row).join('')}` : `<p class="muted small">No other print named like “${esc(C.plateQ)}” beyond the ones below.</p>`) : ''}
+      ${lost.length ? `<h4>Ticked</h4>${lost.map(row).join('')}` : ''}
+      ${same.length ? `<h4>Prints named like “${esc(nameOf(C.job))}”</h4>${same.map(row).join('')}` : ''}
+      ${near.length ? `<h4>Other prints finished within a week of this one${(C.fields.combine || []).length ? ' or of the ones ticked' : ''}</h4>${near.slice(0, 80).map(row).join('')}` : ''}
+      ${same.length || near.length || found.length || lost.length ? '' : '<p class="muted small">No other completed prints within a week of this one. Search by name above.</p>'}`;
+  }
   function platesHtml() {
-    const { same, near } = plateCandidates(C.job), on = new Set(Array.isArray(C.fields.combine) ? C.fields.combine : []);
+    const { same, near, found, lost } = plateCandidates(C.job, C.plateQ || ''), on = new Set(Array.isArray(C.fields.combine) ? C.fields.combine : []);
     const row = (x) => `<label class="plate"><input type="checkbox" data-plate="${esc(x.id)}" ${on.has(x.id) ? 'checked' : ''}>
       ${thumbHtml(x, 'pth')}<span><b>${esc(nameOf(x))}</b><span class="muted small"> · ${esc(x.printer)} · finished ${esc(new Date(x.end || x.start).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · ${esc(hm(x.printSeconds))}${metres(x) ? ` · ${metres(x).toFixed(1)} m` : ''}</span></span></label>`;
-    for (const x of [...same, ...near.slice(0, 60)]) if (!R.thumbs.has(x.id)) { R.thumbs.set(x.id, null); api.reportThumb(x.id).then((t) => { R.thumbs.set(x.id, t); const im = $('certControls').querySelector(`[data-plate="${CSS.escape(x.id)}"] + .pth`); if (im && safeImg(t)) im.outerHTML = `<img class="pth" src="${esc(t)}" alt="">`; }).catch(() => {}); }
+    for (const x of [...lost, ...same, ...near.slice(0, 80), ...found.slice(0, 40)]) if (!R.thumbs.has(x.id)) { R.thumbs.set(x.id, null); api.reportThumb(x.id).then((t) => { R.thumbs.set(x.id, t); const im = $('certControls').querySelector(`[data-plate="${CSS.escape(x.id)}"] + .pth`); if (im && safeImg(t)) im.outerHTML = `<img class="pth" src="${esc(t)}" alt="">`; }).catch(() => {}); }
     return `<div class="platebox">
       <p class="small">Was this model printed in several prints (plates)? Tick the other prints that are part of it. Their printing time, filament, colors and materials are added to the certificate; the height shows the tallest piece (pieces don’t all stack).</p>
-      ${same.length ? `<h4>Prints named like “${esc(nameOf(C.job))}”</h4>${same.map(row).join('')}` : ''}
-      ${near.length ? `<h4>Other prints finished within a week of this one</h4>${near.slice(0, 60).map(row).join('')}` : ''}
-      ${same.length || near.length ? '' : '<p class="muted small">No other completed prints within a week of this one.</p>'}
+      <label class="psearch">Find a print by name <input type="search" id="cPlateQ" placeholder="any part of its name" value="${esc(C.plateQ || '')}"></label>
+      <div id="plateLists">${plateLists(same, near, found, lost, row)}</div>
       <div class="row"><button class="btn primary" id="cPlatesDone">Done</button></div></div>`;
   }
 
@@ -675,7 +687,7 @@
 
   async function openCert(jobId) {
     const j = R.jobs.find((x) => x.id === jobId); if (!j) return;
-    Object.assign(C, { job: j, fields: {}, photo: null, original: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false, platesOpen: false, ideas: ideasStore()[j.id] || null, ideasErr: '', ideasBusy: false });
+    Object.assign(C, { job: j, fields: {}, photo: null, original: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false, platesOpen: false, plateQ: '', ideas: ideasStore()[j.id] || null, ideasErr: '', ideasBusy: false });
     try { const g = await api.certGet(j.id); C.fields = g.fields || {}; C.photo = g.photo; C.original = g.original || null; C.mask = g.mask || null; C.camera = g.camera || []; } catch (e) { status(String(e.message || e)); }
     if (!C.ai && api.certAiInfo) C.ai = await api.certAiInfo().catch(() => null);
     try { C.phone = await api.tsPhotosList(); } catch { C.phone = []; }
@@ -696,10 +708,16 @@
   $('report').addEventListener('click', (e) => { const b = e.target.closest('[data-cert]'); if (b) openCert(b.dataset.cert); });
   $('certControls').addEventListener('input', (e) => {
     const t = e.target, f = C.fields;
+    if (t.id === 'cPlateQ') {
+      C.plateQ = t.value;
+      const box = $('plateLists'); if (box) { const tmp = document.createElement('div'); tmp.innerHTML = platesHtml(); box.innerHTML = tmp.querySelector('#plateLists').innerHTML; }
+      return;
+    }
     if (t.dataset.plate) {   // a print ticked or unticked as part of this model
       const set = new Set(Array.isArray(f.combine) ? f.combine : []);
       if (t.checked) set.add(t.dataset.plate); else set.delete(t.dataset.plate);
       f.combine = [...set]; saveFields(); loadDetails(partsOf()); renderCert();
+      { const box = $('plateLists'), y = box && box.parentElement.scrollTop; if (box) { const tmp = document.createElement('div'); tmp.innerHTML = platesHtml(); box.innerHTML = tmp.querySelector('#plateLists').innerHTML; box.parentElement.scrollTop = y; } }   // the week window follows what's ticked
       const btn = $('cPlates'), n = partsOf().length - 1;
       if (btn) btn.innerHTML = `🧩 ${n ? `Combined with ${n} other print${n > 1 ? 's' : ''}: change…` : 'Multi-plate print? Combine prints…'}`;
       return;
