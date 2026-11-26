@@ -2711,6 +2711,17 @@ ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original, mask) => {
     template: certText(f.template, 20), edit: certEdit(f.edit),
     combine: Array.isArray(f.combine) ? f.combine.filter(s => typeof s === 'string' && s.length < 200).slice(0, 40) : [] };
   // the colors shown, when changed on the certificate (left out: the print's own)
+  // fonts and sizes chosen on the certificate: { title|name|message|details|parties: { family, scale } }
+  if (f.fonts && typeof f.fonts === 'object') {
+    const fonts = {};
+    for (const k of ['title', 'name', 'message', 'details', 'parties']) {
+      const v = f.fonts[k]; if (!v || typeof v !== 'object') continue;
+      const family = typeof v.family === 'string' && /^[A-Za-z0-9 '\-]{1,60}$/.test(v.family) ? v.family : '';
+      const scale = Math.min(2, Math.max(0.5, Number(v.scale) || 1));
+      if (family || scale !== 1) fonts[k] = { family, scale };
+    }
+    if (Object.keys(fonts).length) clean.fonts = fonts;
+  }
   if (Array.isArray(f.colors)) clean.colors = f.colors.filter(c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)).map(c => c.toLowerCase()).slice(0, 16);
   await fs.writeFile(path.join(certDir(), k + '.json'), JSON.stringify(clean));
   const store = async (base, pic) => {

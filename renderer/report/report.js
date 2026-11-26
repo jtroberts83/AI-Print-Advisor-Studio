@@ -519,36 +519,93 @@
 
   function renderCert() {
     if (!C.job) return;
+    $('cert').style.removeProperty('--z');   // measured at full size; fitCert() scales it to the window again
     $('cert').innerHTML = certHtml();
-    fitText();
+    applyFonts();
+    C.shrunk = fitText();
+    const note = $('cFontNote'); if (note) note.hidden = !C.shrunk;
     fitCert();
+  }
+
+  // 🔤 Fonts and sizes: each kind of text can have its own font and size (a % of the template's size).
+  // fields.fonts = { title: { family, scale }, name: …, message: …, details: …, parties: … }
+  const FONT_GROUPS = [
+    { k: 'title', label: 'Title', sel: '.chead h1, .chead .kicker' },
+    { k: 'name', label: 'Name', sel: '.cname' },
+    { k: 'message', label: 'Message', sel: '.cmsg' },
+    { k: 'details', label: 'Details', sel: '.cinfo .intro, .born, .cstats, .cstats dt, .cfun, .party .lbl' },
+    { k: 'parties', label: 'To / From', sel: '.party .val' },
+  ];
+  const FONT_CHOICES = ['Segoe Script', 'Lucida Handwriting', 'Brush Script MT', 'Segoe Print', 'Ink Free', 'Gabriola', 'Mistral', 'Kristen ITC', 'Comic Sans MS',
+    'Palatino Linotype', 'Book Antiqua', 'Georgia', 'Garamond', 'Times New Roman', 'Cambria', 'Constantia', 'Baskerville Old Face', 'Old English Text MT', 'Edwardian Script ITC', 'Vivaldi',
+    'Segoe UI', 'Segoe UI Semibold', 'Bahnschrift', 'Calibri', 'Candara', 'Corbel', 'Arial', 'Arial Black', 'Verdana', 'Tahoma', 'Trebuchet MS', 'Century Gothic', 'Franklin Gothic Medium', 'Impact',
+    'Cooper Black', 'Showcard Gothic', 'Jokerman', 'Chiller', 'Courier New', 'Consolas'];
+  // the fonts this PC really has (a missing font would quietly show as another one)
+  let fontsHere = null;
+  function installedFonts() {
+    if (fontsHere) return fontsHere;
+    const g = document.createElement('canvas').getContext('2d'), probe = 'mmmmmmmmmmlliWW@#ÆQ', w = (f) => { g.font = `40px ${f}`; return g.measureText(probe).width; };
+    const base = ['monospace', 'serif', 'sans-serif'].map((b) => [b, w(b)]);
+    fontsHere = FONT_CHOICES.filter((f) => base.some(([b, bw]) => w(`"${f}", ${b}`) !== bw));
+    return fontsHere;
+  }
+  const fontOf = (k) => { const f = C.fields.fonts && C.fields.fonts[k]; return { family: (f && f.family) || '', scale: f && Number(f.scale) > 0 ? Number(f.scale) : 1 }; };
+  function applyFonts() {
+    const cert = $('cert').querySelector('.cert'); if (!cert) return;
+    for (const g of FONT_GROUPS) {
+      const { family, scale } = fontOf(g.k);
+      if (!family && scale === 1) continue;
+      const els = [...cert.querySelectorAll(g.sel)], sizes = els.map((el) => parseFloat(getComputedStyle(el).fontSize));
+      els.forEach((el, i) => {
+        if (family) el.style.fontFamily = `"${family}", ${getComputedStyle(el).fontFamily}`;
+        if (scale !== 1 && sizes[i]) el.style.fontSize = `${(sizes[i] * scale).toFixed(2)}px`;
+      });
+    }
+  }
+  function fontsHtml() {
+    const custom = FONT_GROUPS.some((g) => { const f = fontOf(g.k); return f.family || f.scale !== 1; });
+    const head = `<div class="row"><button class="btn${custom ? ' on' : ''}" id="cFonts" aria-expanded="${!!C.fontsOpen}" title="Change the font and size of each kind of text">🔤 Fonts and sizes${custom ? ' (changed)' : ''}</button>${custom ? '<button class="link" id="cFontsReset">Use the template’s fonts</button>' : ''}</div>`;
+    if (!C.fontsOpen) return head;
+    const list = installedFonts();
+    return head + `<div class="fontbox">${FONT_GROUPS.map((g) => {
+      const f = fontOf(g.k), pct = Math.round(f.scale * 100);
+      return `<div class="frow"><span class="flbl">${esc(g.label)}</span>
+        <select data-ffam="${g.k}" aria-label="${esc(g.label)} font"><option value="">Template’s font</option>${list.map((n) => `<option value="${esc(n)}" style="font-family:'${esc(n)}'" ${n === f.family ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+        <input type="range" min="50" max="200" step="5" value="${pct}" data-fsize="${g.k}" aria-label="${esc(g.label)} size">
+        <output data-fout="${g.k}">${pct}%</output></div>`;
+    }).join('')}<small id="cFontNote" class="muted" ${C.shrunk ? '' : 'hidden'}>Some text was made a little smaller than you set so that everything fits on the page.</small></div>`;
   }
   // Long names, messages, To / From: nothing is ever cut off. The text wraps onto more lines, and if the side
   // still overflows, things get smaller step by step (the name, the message, the stats, then the photo gets
   // narrower) until all of it fits.
   function fitText() {
-    const cert = $('cert').querySelector('.cert'); if (!cert) return;
+    const cert = $('cert').querySelector('.cert'); if (!cert) return false;
     const info = cert.querySelector('.cinfo'), body = cert.querySelector('.cbody');
+    let shrunk = false;
     if (info) {
       const over = () => info.scrollHeight > info.clientHeight + 1;
       const msg = info.querySelector('.cmsg'), name = info.querySelector('.cname'), stats = info.querySelector('.cstats'), fun = info.querySelector('.cfun');
+      // sizes as shares of where each starts (the template's size, or the size chosen in Fonts and sizes)
+      const base = new Map([name, msg, stats].filter(Boolean).map((el) => [el, parseFloat(getComputedStyle(el).fontSize)]));
+      const size = (el, k) => () => { if (el) el.style.fontSize = `${(base.get(el) * k).toFixed(2)}px`; };
       const steps = [];
-      for (let pt = 28; pt >= 20; pt -= 2) steps.push(() => name && (name.style.fontSize = `${pt}pt`));
-      for (let pt = 12.5; pt >= 10; pt -= 0.5) steps.push(() => msg && (msg.style.fontSize = `${pt}pt`));
-      for (let pt = 9.2; pt >= 7.6; pt -= 0.4) steps.push(() => stats && (stats.style.fontSize = `${pt}pt`));
+      for (let k = 0.93; k >= 0.66; k -= 0.067) steps.push(size(name, k));
+      for (let k = 0.96; k >= 0.8; k -= 0.04) steps.push(size(msg, k));
+      for (let k = 0.96; k >= 0.79; k -= 0.042) steps.push(size(stats, k));
       for (let w = 3.5; w >= 2.5; w -= 0.25) steps.push(() => body && (body.style.gridTemplateColumns = `${w}in 1fr`));
-      for (let pt = 9.5; pt >= 7; pt -= 0.5) steps.push(() => msg && (msg.style.fontSize = `${pt}pt`));
+      for (let k = 0.76; k >= 0.56; k -= 0.04) steps.push(size(msg, k));
       steps.push(() => fun && (fun.style.display = 'none'));   // the filament fun fact goes before anything you wrote
-      for (let pt = 18; pt >= 12; pt -= 2) steps.push(() => name && (name.style.fontSize = `${pt}pt`));
-      for (let pt = 7.2; pt >= 6; pt -= 0.4) steps.push(() => stats && (stats.style.fontSize = `${pt}pt`));
-      for (let pt = 6.5; pt >= 5; pt -= 0.5) steps.push(() => msg && (msg.style.fontSize = `${pt}pt`));
-      for (const s of steps) { if (!over()) break; s(); }
+      for (let k = 0.6; k >= 0.4; k -= 0.067) steps.push(size(name, k));
+      for (let k = 0.75; k >= 0.62; k -= 0.042) steps.push(size(stats, k));
+      for (let k = 0.52; k >= 0.3; k -= 0.04) steps.push(size(msg, k));
+      for (const s of steps) { if (!over()) break; s(); shrunk = true; }
     }
     // To / From: wrap onto two lines, smaller until it fits its box
     for (const v of cert.querySelectorAll('.party .val')) {
-      const pt0 = parseFloat(getComputedStyle(v).fontSize) * 0.75;
-      for (let pt = pt0; pt >= 8 && (v.scrollWidth > v.clientWidth + 1 || v.scrollHeight > v.clientHeight + 1); pt -= 1) v.style.fontSize = `${pt}pt`;
+      const px0 = parseFloat(getComputedStyle(v).fontSize);
+      for (let px = px0; px >= 10 && (v.scrollWidth > v.clientWidth + 1 || v.scrollHeight > v.clientHeight + 1); px -= 1.3) { v.style.fontSize = `${px}px`; if (px < px0) shrunk = true; }
     }
+    return shrunk;
   }
   function fitCert() {
     const el = $('cert').querySelector('.cert'); if (!el) return;
@@ -582,6 +639,7 @@
         ${C.photo ? `<button class="link" id="cNoPhoto">Use the slicer picture instead</button>` : ''}
       </div>
       ${colorsHtml()}
+      ${fontsHtml()}
       ${(() => {
         const n = partsOf().length - 1;
         const hint = !n && looksMulti(C.job) ? '<span class="muted small">This looks like part of a bigger print (other prints have a similar name).</span>' : '';
@@ -748,6 +806,13 @@
       if (btn) btn.innerHTML = `🧩 ${n ? `Combined with ${n} other print${n > 1 ? 's' : ''}: change…` : 'Multi-plate print? Combine prints…'}`;
       return;
     }
+    if (t.dataset.ffam != null || t.dataset.fsize != null) {   // a font or size: only the certificate is redrawn (the slider keeps moving)
+      const k = t.dataset.ffam || t.dataset.fsize, all = { ...(f.fonts || {}) }, cur = { ...fontOf(k) };
+      if (t.dataset.ffam != null) cur.family = t.value; else { cur.scale = Number(t.value) / 100; const o = $('certControls').querySelector(`[data-fout="${k}"]`); if (o) o.textContent = `${t.value}%`; }
+      if (!cur.family && cur.scale === 1) delete all[k]; else all[k] = { family: cur.family, scale: cur.scale };
+      f.fonts = all; saveFields(); renderCert();
+      return;
+    }
     if (t.dataset.ci != null) {   // a color changed: the controls stay as they are, so the color picker stays open
       const list = [...colorList()]; list[Number(t.dataset.ci)] = t.value.toLowerCase(); f.colors = list;
       saveFields(); renderCert();
@@ -773,6 +838,8 @@
     else if (b.id === 'cUndo') undoTouchUp();
     else if (b.dataset.cdel != null) { const list = [...colorList()]; list.splice(Number(b.dataset.cdel), 1); C.fields.colors = list; saveFields(); certControls(); renderCert(); }
     else if (b.id === 'cColAdd') { C.fields.colors = [...colorList(), '#888888']; saveFields(); certControls(); renderCert(); const ins = $('certControls').querySelectorAll('[data-ci]'); const last = ins[ins.length - 1]; if (last) last.click(); }
+    else if (b.id === 'cFonts') { C.fontsOpen = !C.fontsOpen; certControls(); }
+    else if (b.id === 'cFontsReset') { delete C.fields.fonts; saveFields(); renderCert(); certControls(); }
     else if (b.id === 'cColReset') { delete C.fields.colors; saveFields(); certControls(); renderCert(); }
     else if (b.id === 'cPlates') { C.platesOpen = !C.platesOpen; certControls(); }
     else if (b.id === 'cPlatesDone') { C.platesOpen = false; certControls(); }

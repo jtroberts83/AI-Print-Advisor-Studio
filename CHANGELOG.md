@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.48.0
+- Certificates: **🔤 Fonts and sizes**. Pick the font and the size (50–200 % of the template's) for the title, the
+  name, the message, the details and To / From, each on its own. Only fonts this PC has are listed. Kept with the
+  certificate; **Use the template's fonts** goes back. If what you pick doesn't fit, it's made just small enough to
+  fit (and says so), so nothing is cut off.
+- Certificates: To and From (and other text) no longer come out too small when the window is small. The preview is
+  scaled to the window, and the sizes were measured at that scale.
+
 ## 2.47.0
 - Print history: **✂ Print the rest…** on a cancelled or failed print. Choose the project (.3mf) it was printed from
   (and the plate, if it has several): every object on that plate is cut at the height it stopped at (you can change
