@@ -7,7 +7,7 @@
 // photo's shape. The result keeps the photo's own pixels and makes the background transparent (a PNG), so the
 // certificate's own color shows behind the model, whichever template is picked.
 (function (root) {
-  const DEF = { exposure: 0, contrast: 0, saturation: 0, warmth: 0, hue: 0, sharpen: 0, removeBg: false, soften: 0, trim: true, margin: 4 };
+  const DEF = { exposure: 0, contrast: 0, saturation: 0, warmth: 0, hue: 0, sharpen: 0, removeBg: false, soften: 0, trim: true, margin: 4, rotate: 0, straighten: 0 };
   const PREVIEW = 900, FINAL = 2400, AI = 1024;
 
   // ---------------------------------------------------------------- pixels
@@ -214,6 +214,37 @@
     c.getContext('2d').putImageData(mask ? render(px, { ...DEF }, mask, [0, 1, 0]) : render(px, { ...DEF }, null, null), 0, 0);
     return c.toDataURL('image/jpeg', 0.88);
   }
+  // the photo turned: rotate (0, 90, 180, 270, clockwise) and straighten (-15..15 degrees; zoomed in just enough that
+  // no empty corners show)
+  async function turned(img, rotate, straighten) {
+    const r = ((Math.round((rotate || 0) / 90) * 90) % 360 + 360) % 360, a = Math.max(-15, Math.min(15, Number(straighten) || 0));
+    if (!r && !a) return img;
+    const k = Math.min(1, 4000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const w0 = Math.round(img.naturalWidth * k), h0 = Math.round(img.naturalHeight * k);
+    const W = r % 180 ? h0 : w0, H = r % 180 ? w0 : h0;
+    const t = Math.abs(a) * Math.PI / 180, s = Math.max((W * Math.cos(t) + H * Math.sin(t)) / W, (W * Math.sin(t) + H * Math.cos(t)) / H);
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+    g.translate(W / 2, H / 2); g.rotate((r + a) * Math.PI / 180); g.scale(s, s); g.drawImage(img, -w0 / 2, -h0 / 2, w0, h0);
+    return loadImg(c.toDataURL('image/jpeg', 0.95));
+  }
+  // the closer look only sharpens edges: a whole piece the first look found (a base, a plaque, a separate part)
+  // that the closer look leaves out is put back
+  function keepPieces(close, first) {
+    const { w, h } = first, n = w * h, lost = new Uint8Array(n); let tot = 0;
+    for (let i = 0; i < n; i++) if (first.m[i] >= 0.5) { tot++; if (close.m[i] < 0.5) lost[i] = 1; }
+    const stack = new Int32Array(n), seen = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      if (!lost[i] || seen[i]) continue;
+      const comp = []; let sp = 0; stack[sp++] = i; seen[i] = 1;
+      while (sp) {
+        const j = stack[--sp]; comp.push(j); const x = j % w;
+        for (const q of [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, j - w, j + w]) if (q >= 0 && q < n && lost[q] && !seen[q]) { seen[q] = 1; stack[sp++] = q; }
+      }
+      if (comp.length >= tot * 0.02) for (const j of comp) close.m[j] = Math.max(close.m[j], first.m[j]);
+    }
+    return close;
+  }
   // brush edits on top of the mask: ew = how much the edit counts (0..1), ev = the alpha it sets (0 erase, 1 restore)
   function applyEdits(a, ew, ev) { const out = a.slice(); for (let i = 0; i < out.length; i++) if (ew[i]) out[i] = out[i] * (1 - ew[i]) + ev[i] * ew[i]; return out; }
 
@@ -236,13 +267,17 @@
   }
 
   // mask: the saved cut-out (from the last "Use this photo"), or null
-  function open({ src, params, paper = '#fffdf6', cutout = null, mask = null }) {
+  // pieces: how many prints the certificate is for (several: the model is in several pieces, so the AI is asked to
+  // keep everything it sees as part of it)
+  function open({ src, params, paper = '#fffdf6', cutout = null, mask = null, pieces = 1 }) {
     return new Promise(async (resolve) => {
-      let img;
-      try { img = await loadImg(src); } catch (e) { resolve(null); return; }
+      let orig, img;
+      try { orig = await loadImg(src); } catch (e) { resolve(null); return; }
       const P = { ...DEF, brush: 28, ...(params || {}) };
       delete P.tolerance; delete P.bg; delete P.tolTouched;   // from the old background remover
-      const prev = pixels(img, PREVIEW), [GW, GH] = gridSize(img);
+      try { img = await turned(orig, P.rotate, P.straighten); } catch { img = orig; P.rotate = 0; P.straighten = 0; }
+      let prev = pixels(img, PREVIEW), [GW, GH] = gridSize(img);
+      const multi = pieces > 1;
       let grid = null, aiBusy = false;   // the cut-out mask at grid size ({ w, h, m }), made by the AI
       if (mask && P.removeBg) { try { grid = await maskFromUrl(mask); } catch { grid = null; } }   // the saved cut-out: no need to ask the AI again
       let ew = new Float32Array(prev.w * prev.h), ev = new Float32Array(prev.w * prev.h), edited = false;   // brush edits, preview size
@@ -259,13 +294,17 @@
           <h2>Touch up the photo</h2>
           <div class="pe-row"><button class="btn primary" data-pe="auto" title="Sets the sliders from this photo’s brightness and colors. Adjust them after if you like.">✨ Auto-fix</button>
             <button class="btn" data-pe="hold" title="Hold to see the original">👁 Hold to compare</button><button class="link" data-pe="reset">Reset</button></div>
+          <div class="pe-row pe-rot"><span class="pe-rl">Rotate</span><button class="btn" data-pe="rotl" title="Turn the photo a quarter turn to the left (the background is cut out again)">⟲</button><button class="btn" data-pe="rotr" title="Turn the photo a quarter turn to the right (the background is cut out again)">⟳</button>
+            <label class="pe-sl pe-str"><span>Straighten <output data-out="straighten">${P.straighten}</output>°</span><input type="range" data-k="straighten" min="-15" max="15" step="0.5" value="${P.straighten}"></label></div>
           ${SLIDERS.map(([k, label, lo, hi]) => `<label class="pe-sl"><span>${esc(label)} <output data-out="${k}">${P[k]}</output></span><input type="range" data-k="${k}" min="${lo}" max="${hi}" value="${P[k]}"></label>`).join('')}
           <fieldset class="pe-bg"><legend><label><input type="checkbox" data-k="removeBg" ${P.removeBg ? 'checked' : ''}> Remove the background</label></legend>
             <p class="muted small pe-what">An AI model on this PC finds your model in the photo and takes the background away; the certificate’s own color shows behind it.</p>
             <div class="pe-dl" hidden><button class="btn primary" data-pe="download"></button><progress max="1" value="0" hidden></progress></div>
             <div class="pe-tools" hidden>
               <p class="small pe-ask"><b>Bits of background left?</b> Fix them here:</p>
-              <div class="pe-row"><button class="btn" data-tool="box" title="Drag a box around your model: everything outside goes, and the AI looks again, closer">✂ Box around the model</button>
+              <p class="small pe-multi" ${multi ? '' : 'hidden'}>This certificate is for ${pieces} prints. If a piece is missing, use <b>➕ Add a missed piece</b> and drag a box around it.</p>
+              <div class="pe-row"><button class="btn" data-tool="add" title="Drag a box around a piece the cut-out left out (a base, a plaque, a separate part): the AI looks inside the box and adds it, keeping everything else">➕ Add a missed piece</button>
+                <button class="btn" data-tool="box" title="Drag a box around your model: everything outside goes, and the AI looks again, closer">✂ Box around the model</button>
                 <button class="btn" data-tool="erase" title="Paint over leftover background to remove it">🧽 Erase</button>
                 <button class="btn" data-tool="restore" title="Paint over parts of your model that were removed by mistake">🖌 Restore</button></div>
               <p class="small pe-how" hidden></p>
@@ -286,6 +325,7 @@
       const dl = box.querySelector('.pe-dl'), dlBtn = dl.querySelector('button'), bar = dl.querySelector('progress');
       const say = (t) => { warn.textContent = t || ''; warn.hidden = !t; };
       const HOW = { box: 'Drag a box around your model on the picture. Everything outside it goes, and the AI looks again, closer.',
+        add: 'Drag a box around the piece that is missing. The AI looks inside the box and adds what it finds; nothing else changes.',
         erase: 'Paint over the leftover background on the picture.', restore: 'Paint over parts of your model that were taken away by mistake.' };
       const sync = () => {
         for (const el of box.querySelectorAll('[data-k]')) { const k = el.dataset.k; if (el.type === 'checkbox') el.checked = !!P[k]; else el.value = P[k]; }
@@ -337,8 +377,9 @@
       };
       const remember = () => { undo.push({ grid, ew: ew.slice(), ev: ev.slice(), edited, box: P.box }); if (undo.length > 15) undo.shift(); };
       // the AI cuts out the model: the whole photo, or just inside the box (closer, so sharper)
-      async function cutOut(rect) {
+      async function cutOut(rect, add = false) {
         if (aiBusy) return;
+        if (add && !grid) return;
         if (!cutout) { say('Background removal isn’t available here.'); P.removeBg = false; sync(); return; }
         st = await cutout.status().catch(() => st);
         if (!st || !st.ready) { say(st ? 'First, download the background remover with the button above (once). Your model is cut out right after.' : 'The background remover isn’t available right now.'); sync(); return; }
@@ -350,9 +391,18 @@
           const look = async (q) => {
             const a = await cutout.run(squeezedPart(img, q, false)), b = await cutout.run(squeezedPart(img, q, true));
             const m = new Float32Array(AI * AI);
-            for (let y = 0; y < AI; y++) { const o = y * AI; for (let x = 0; x < AI; x++) m[o + x] = (a[o + x] + b[o + AI - 1 - x]) / 510; }
+            // (several pieces: whichever look found a piece keeps it)
+            for (let y = 0; y < AI; y++) { const o = y * AI; for (let x = 0; x < AI; x++) m[o + x] = multi ? Math.max(a[o + x], b[o + AI - 1 - x]) / 255 : (a[o + x] + b[o + AI - 1 - x]) / 510; }
             return { w: AI, h: AI, m };
           };
+          if (add) {   // a missed piece: what the AI finds in the box is added; everything else stays
+            busy.textContent = 'Looking for the missed piece inside your box… (a few seconds)';
+            const piece = tidy(placeMask(await look(rect), rect, GW, GH));
+            grid = union(grid, piece);
+            let got = 0; for (const v of piece.m) got += v >= 0.5 ? 1 : 0;
+            if (got < 20) say('The AI didn’t find a piece in that box. Try a slightly bigger box, or paint it back with 🖌 Restore.');
+            aiBusy = false; busy.hidden = true; sync(); draw(); return;
+          }
           let gm = rect && grid ? grid : null;
           if (!gm) {   // the whole photo, then a closer look at just the model for sharper edges
             gm = tidy(placeMask(await look([0, 0, 1, 1]), [0, 0, 1, 1], GW, GH));
@@ -362,7 +412,7 @@
               const r2 = [Math.max(0, bb[0] - mx), Math.max(0, bb[1] - my), Math.min(1, bb[2] + mx), Math.min(1, bb[3] + my)];
               if ((r2[2] - r2[0]) * (r2[3] - r2[1]) < 0.8) {
                 busy.textContent = 'Looking closer at your model… (a few seconds)';
-                gm = within(tidy(placeMask(await look(r2), r2, GW, GH)), gm);
+                gm = keepPieces(within(tidy(placeMask(await look(r2), r2, GW, GH)), gm), gm);
               }
             }
           }
@@ -408,7 +458,7 @@
         showCursor(e);
         if (!down) return;
         const p = at(e);
-        if (tool === 'box') {
+        if (tool === 'box' || tool === 'add') {
           const vr = view.getBoundingClientRect();
           Object.assign(sel.style, { left: `${Math.min(down.cx, e.clientX) - vr.left}px`, top: `${Math.min(down.cy, e.clientY) - vr.top}px`, width: `${Math.abs(e.clientX - down.cx)}px`, height: `${Math.abs(e.clientY - down.cy)}px` });
           sel.hidden = false;
@@ -421,12 +471,13 @@
       const up = async (e) => {
         if (!down) return;
         const start = down; down = null; sel.hidden = true;
-        if (tool !== 'box') return;
+        if (tool !== 'box' && tool !== 'add') return;
         const p = at(e), clamp = (v) => Math.max(0, Math.min(1, v));
         const rect = [clamp(Math.min(start.x, p.x) / prev.w), clamp(Math.min(start.y, p.y) / prev.h), clamp(Math.max(start.x, p.x) / prev.w), clamp(Math.max(start.y, p.y) / prev.h)];
         if ((rect[2] - rect[0]) * prev.w < 12 || (rect[3] - rect[1]) * prev.h < 12) { say('Drag to draw the box: press, move and let go.'); return; }
+        const adding = tool === 'add';
         remember(); tool = null; sync();
-        await cutOut(rect);
+        await cutOut(rect, adding);
       };
       cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', () => { down = null; sel.hidden = true; });
       cv.addEventListener('pointerleave', () => { cursor.hidden = true; });
@@ -438,9 +489,23 @@
       };
       document.addEventListener('keydown', onKey);
       let offProgress = null;
+      // turning the photo: the cut-out and brush fixes start again on the turned photo
+      async function turn() {
+        if (aiBusy) return;
+        busy.textContent = 'Turning the photo…'; busy.hidden = false;
+        try { img = await turned(orig, P.rotate, P.straighten); } catch (err) { say(err.message || String(err)); }
+        prev = pixels(img, PREVIEW); [GW, GH] = gridSize(img);
+        cv.width = prev.w; cv.height = prev.h;
+        ew = new Float32Array(prev.w * prev.h); ev = new Float32Array(prev.w * prev.h); edited = false; base = null;
+        grid = null; P.box = null; undo.length = 0; tool = null; showMarks(null);
+        busy.hidden = true; sync(); draw();
+        if (P.removeBg) await cutOut(null);
+      }
+      box.addEventListener('change', (e) => { if (e.target.dataset.k === 'straighten') turn(); });
       box.addEventListener('input', (e) => {
         const t = e.target;
         if (!t.dataset.k) return;
+        if (t.dataset.k === 'straighten') { P.straighten = +t.value; const o = box.querySelector('[data-out=straighten]'); if (o) o.textContent = t.value; return; }
         P[t.dataset.k] = t.type === 'checkbox' ? t.checked : +t.value;
         sync(); draw();
         if (t.dataset.k === 'removeBg' && t.checked) findModel();
@@ -451,13 +516,14 @@
         const b = e.target.closest('[data-pe]'); if (!b) return;
         const a = b.dataset.pe;
         if (a === 'cancel') done(null);
-        else if (a === 'reset') { Object.assign(P, DEF, { brush: P.brush, box: P.box, removeBg: P.removeBg }); sync(); draw(); }
+        else if (a === 'rotl' || a === 'rotr') { if (aiBusy) return; P.rotate = ((P.rotate || 0) + (a === 'rotr' ? 90 : 270)) % 360; await turn(); }
+        else if (a === 'reset') { Object.assign(P, DEF, { brush: P.brush, box: P.box, removeBg: P.removeBg, rotate: P.rotate, straighten: P.straighten }); sync(); draw(); }
         else if (a === 'auto') { Object.assign(P, autoFix(prev, maskFor())); sync(); draw(); }
         else if (a === 'undo') { const u = undo.pop(); if (u) { grid = u.grid; ew = u.ew; ev = u.ev; edited = u.edited; P.box = u.box; } sync(); draw(); }
         else if (a === 'claude') {
           if (aiBusy || !grid) return;
           b.disabled = true; say(''); showMarks(null);
-          const ask = async (label) => { busy.textContent = label; busy.hidden = false; try { return await cutout.claude(previewUrl(prev, P, null), previewUrl(prev, P, maskFor())); } finally { busy.hidden = true; } };
+          const ask = async (label) => { busy.textContent = label; busy.hidden = false; try { return await cutout.claude(previewUrl(prev, P, null), previewUrl(prev, P, maskFor()), pieces); } finally { busy.hidden = true; } };
           try {
             let r = await ask('Claude is looking at your photo…');
             let spent = r.usd || 0;
@@ -519,7 +585,7 @@
     });
   }
 
-  const api = { open, autoFix, render, maskAt, tidy, placeMask, applyEdits, within, clip, union, trimRect, DEF };
+  const api = { open, autoFix, render, maskAt, tidy, placeMask, applyEdits, within, keepPieces, clip, union, trimRect, DEF };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PhotoEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);

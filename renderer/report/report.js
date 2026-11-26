@@ -541,6 +541,50 @@
   // the colors on the certificate: the ones set here (changed, removed or added), or else the print's
   function colorList() { return Array.isArray(C.fields.colors) ? C.fields.colors : autoColors(); }
   function certColors() { return colorList().map((color) => ({ color })); }
+  // 🧵 Filaments used: picked from the filament library (or typed), listed under the photo
+  const filsOf = () => (Array.isArray(C.fields.filaments) ? C.fields.filaments : []);
+  const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(String(h).slice(i, i + 2), 16) || 0);
+  const hexDist = (a, b) => { const p = hexRgb(a), q = hexRgb(b); return Math.hypot((p[0] - q[0]) * 0.3, (p[1] - q[1]) * 0.59, (p[2] - q[2]) * 0.11); };
+  const presetBase = (s) => String(s || '').replace(/\s*@.*$/, '').toLowerCase().trim();
+  // for each filament the print(s) used: the library's closest one (same slicer preset first, then the same type, then the color)
+  function filSuggestions() {
+    const lib = C.lib || [], seen = new Set(), out = [];
+    const used = partsOf().flatMap((x) => x.filaments || []).filter((f) => f.color || f.name);
+    const key = (f) => `${presetBase(f.name)}|${String(f.color).toLowerCase()}`;
+    for (const f of used) {
+      if (seen.has(key(f))) continue; seen.add(key(f));
+      const score = (l) => (presetBase(l.preset) && presetBase(l.preset) === presetBase(f.name) ? 0 : 120) + (f.type && l.type && f.type.toUpperCase() !== l.type.toUpperCase() ? 80 : 0) + (f.color ? hexDist(l.hex, f.color) : 60);
+      const best = lib.slice().sort((a, b) => score(a) - score(b)).slice(0, 3);
+      out.push({ print: f, best });
+    }
+    return out;
+  }
+  const filRow = (l, attr) => `<button type="button" class="frow2" ${attr}><span class="sw" style="background:${esc(l.hex)}"></span><span>${esc(l.name)}</span><span class="muted small">${esc(l.type)}${l.finish && l.finish !== 'Basic' ? ` · ${esc(l.finish)}` : ''}</span></button>`;
+  function filLibList() {
+    const q = (C.filQ || '').trim().toLowerCase(), lib = C.lib || [];
+    const hits = lib.map((l, i) => ({ l, i })).filter(({ l }) => !q || `${l.name} ${l.type} ${l.finish}`.toLowerCase().includes(q)).slice(0, 80);
+    return hits.length ? hits.map(({ l, i }) => filRow(l, `data-flib="${i}"`)).join('') : `<p class="muted small">${lib.length ? 'No filament in your library matches that.' : 'Your filament library is empty (add yours on the Filament screen), or type one below.'}</p>`;
+  }
+  function filsHtml() {
+    const list = filsOf();
+    const head = `<div class="row ccolors"><span class="lbl">Filaments</span>
+      ${list.map((x, i) => `<span class="fchip"><span class="sw" style="background:${esc(x.hex)}"></span>${esc(x.name)}${x.type ? ` <span class="muted">${esc(x.type)}</span>` : ''}<button type="button" class="cdel" data-fdel="${i}" title="Take this one off the list" aria-label="Remove ${esc(x.name)}">×</button></span>`).join('')}
+      <button type="button" class="btn${C.filOpen ? ' on' : ''}" id="cFilOpen" aria-expanded="${!!C.filOpen}" title="Pick the filaments this print was made with from your filament library; they are listed under the photo">🧵 ${list.length ? 'Add or change…' : 'List the filaments used…'}</button>
+      ${list.length ? '<button type="button" class="link" id="cFilClear">Remove the list</button>' : '<span class="muted small">Shows “Filaments used” under the photo.</span>'}</div>`;
+    if (!C.filOpen) return head;
+    if (!C.lib) { api.certFilaments().then((l) => { C.lib = l || []; if (C.filOpen) certControls(); }).catch(() => { C.lib = []; certControls(); }); return head + '<div class="platebox"><p class="muted small">Reading your filament library…</p></div>'; }
+    const sug = filSuggestions();
+    return head + `<div class="platebox filbox">
+      ${sug.length && (C.lib || []).length ? `<h4>Best matches from your library for this print’s filaments</h4>${sug.map((s, k) => `<div class="fsug"><span class="muted small">Slicer: <span class="sw" style="background:${esc(s.print.color || '#888')}"></span>${esc(String(s.print.name || '').replace(/\s*@.*$/, '').trim() || s.print.type || 'filament')}</span>${s.best.map((l) => filRow(l, `data-flib="${(C.lib || []).indexOf(l)}"`)).join('')}</div>`).join('')}
+        <div class="row"><button type="button" class="btn" id="cFilBest">Add the best match for each</button></div>` : ''}
+      <h4>Your filament library</h4>
+      <label class="psearch">Find <input type="search" id="cFilQ" placeholder="brand, line, color or type" value="${esc(C.filQ || '')}"></label>
+      <div id="filLib" class="fillib">${filLibList()}</div>
+      <h4>Not in the library?</h4>
+      <div class="row"><input type="text" id="cFilName" maxlength="90" placeholder="e.g. Sunlu Silk PLA Gold"><input type="color" id="cFilHex" value="#c9a227" aria-label="Its color"><input type="text" id="cFilType" maxlength="24" size="8" placeholder="PLA"><button type="button" class="btn" id="cFilCustom">Add</button></div>
+      <div class="row"><button type="button" class="btn primary" id="cFilDone">Done</button></div></div>`;
+  }
+  const addFil = (x) => { const list = [...filsOf()]; if (list.length >= 16 || list.some((y) => y.name === x.name && y.hex === x.hex)) return; list.push({ name: x.name, hex: x.hex, type: x.type || '' }); C.fields.filaments = list; saveFields(); certControls(); renderCert(); };
   function colorsHtml() {
     const list = colorList(), own = Array.isArray(C.fields.colors);
     return `<div class="row ccolors"><span class="lbl">Colors</span>
@@ -568,8 +612,9 @@
       <div class="paper">
         <header class="chead"><div class="kicker">${esc(tp.kicker)}</div><h1>${tp.letters ? rainbowText(tp.title, tp.letters) : esc(tp.title)}</h1></header>
         <div class="cbody">
-          <div class="pcell"><figure class="cphoto ${photo ? '' : 'none'} ${C.photo && C.fields.edit && C.fields.edit.removeBg ? 'cutout' : ''}"${ar ? ` style="--ar:${ar.toFixed(4)}"` : ''}>${photo ? `<img src="${esc(photo)}" alt="" style="object-fit:${C.photo ? 'cover' : 'contain'}">` : '<span>Add a photo</span>'}
-            ${colors.length ? `<figcaption>${colors.map((x) => `<span class="sw" style="background:${esc(x.color)}"></span>`).join('')}</figcaption>` : ''}</figure></div>
+          <div class="pcol"><div class="pcell"><figure class="cphoto ${photo ? '' : 'none'} ${C.photo && C.fields.edit && C.fields.edit.removeBg ? 'cutout' : ''}"${ar ? ` style="--ar:${ar.toFixed(4)}"` : ''}>${photo ? `<img src="${esc(photo)}" alt="" style="object-fit:${C.photo ? 'cover' : 'contain'}">` : '<span>Add a photo</span>'}
+            ${colors.length && !filsOf().length ? `<figcaption>${colors.map((x) => `<span class="sw" style="background:${esc(x.color)}"></span>`).join('')}</figcaption>` : ''}</figure></div>
+            ${filsOf().length ? `<div class="cfils"><div class="cfh">Filaments used</div><ul class="${filsOf().length > 3 ? 'two' : ''}">${filsOf().map((x) => `<li><span class="sw" style="background:${esc(x.hex)}"></span><span>${esc(x.name)}${x.type && !x.name.toLowerCase().includes(x.type.toLowerCase()) ? ` <i>${esc(x.type)}</i>` : ''}</span></li>`).join('')}</ul></div>` : ''}</div>
           <div class="cinfo">
             <div class="intro">${esc(tp.intro)}</div>
             <div class="cname">${esc(name)}</div>
@@ -606,7 +651,7 @@
     { k: 'title', label: 'Title', sel: '.chead h1, .chead .kicker' },
     { k: 'name', label: 'Name', sel: '.cname' },
     { k: 'message', label: 'Message', sel: '.cmsg' },
-    { k: 'details', label: 'Details', sel: '.cinfo .intro, .born, .cstats, .cstats dt, .cfun, .party .lbl' },
+    { k: 'details', label: 'Details', sel: '.cinfo .intro, .born, .cstats, .cstats dt, .cfun, .party .lbl, .cfils' },
     { k: 'to', label: 'To', sel: '.cfoot > .party:first-of-type .val' },
     { k: 'from', label: 'From', sel: '.cfoot > .party:last-of-type .val' },
   ];
@@ -770,11 +815,12 @@
         <label class="btn">🖼 Choose a photo…<input id="cFile" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
         <button class="btn" id="cPhone">📱 ${C.qr ? 'Hide the QR code' : 'Take one with your phone'}</button>
         ${C.camera.length ? `<button class="btn" id="cCam" title="The Print Monitor’s photo from the printer’s camera, taken at 99 %">📷 Printer camera photo</button>` : ''}
-        ${C.photo ? `<button class="btn" id="cTouch" title="Exposure, contrast, colors, sharpening, background removal: preview first, then use it">🎨 Touch up photo</button>` : ''}
+        ${C.photo ? `<button class="btn" id="cTouch" title="Rotate, straighten, exposure, contrast, colors, sharpening, background removal: preview first, then use it">🎨 Touch up / rotate photo</button>` : ''}
         ${C.original ? `<button class="link" id="cUndo">Undo touch up</button>` : ''}
         ${C.photo ? `<button class="link" id="cNoPhoto">Use the slicer picture instead</button>` : ''}
       </div>
       ${colorsHtml()}
+      ${filsHtml()}
       ${fontsHtml()}
       ${(() => {
         const n = partsOf().length - 1;
@@ -812,7 +858,7 @@
     const paper = certEl ? getComputedStyle(certEl).getPropertyValue('--c-bg').trim() || '#ffffff' : '#ffffff';
     const cutout = api.cutoutRun ? { status: api.cutoutStatus, download: api.cutoutDownload, onProgress: api.onCutoutProgress, run: api.cutoutRun, claudeInfo: api.cutoutClaudeInfo, claude: api.cutoutClaude } : null;
     // from the original (so edits can be changed or undone without losing quality), with the last settings and cut-out
-    const r = await window.PhotoEdit.open({ src: C.original || C.photo, params: C.fields.edit, paper, cutout, mask: C.mask });
+    const r = await window.PhotoEdit.open({ src: C.original || C.photo, params: C.fields.edit, paper, cutout, mask: C.mask, pieces: partsOf().length });
     if (!r) return;
     if (!C.original) C.original = C.photo;
     C.photo = r.dataUrl; C.fields.edit = r.params; C.mask = r.mask || null;
@@ -932,6 +978,7 @@
   $('report').addEventListener('click', (e) => { const b = e.target.closest('[data-cert]'); if (b) openCert(b.dataset.cert); });
   $('certControls').addEventListener('input', (e) => {
     const t = e.target, f = C.fields;
+    if (t.id === 'cFilQ') { C.filQ = t.value; const box = $('filLib'); if (box) box.innerHTML = filLibList(); return; }
     if (t.id === 'cPlateQ') {
       C.plateQ = t.value;
       const box = $('plateLists'); if (box) { const tmp = document.createElement('div'); tmp.innerHTML = platesHtml(); box.innerHTML = tmp.querySelector('#plateLists').innerHTML; }
@@ -986,6 +1033,13 @@
     else if (b.id === 'cCam') { const u = await api.certCameraPhoto(C.job.id, C.camera[0].id).catch(() => null); if (u) { await setPhoto(u); cstatus('✓ The printer camera’s photo is on the certificate.'); } else cstatus('That camera photo isn’t on this PC anymore.'); }
     else if (b.id === 'cNoPhoto') { await setPhoto(null); }
     else if (b.id === 'cTouch') touchUp();
+    else if (b.id === 'cFilOpen') { C.filOpen = !C.filOpen; certControls(); }
+    else if (b.id === 'cFilDone') { C.filOpen = false; certControls(); }
+    else if (b.id === 'cFilClear') { delete C.fields.filaments; saveFields(); certControls(); renderCert(); }
+    else if (b.dataset.flib != null) { const l = (C.lib || [])[Number(b.dataset.flib)]; if (l) addFil(l); }
+    else if (b.dataset.fdel != null) { const list = [...filsOf()]; list.splice(Number(b.dataset.fdel), 1); C.fields.filaments = list; saveFields(); certControls(); renderCert(); }
+    else if (b.id === 'cFilBest') { const list = [...filsOf()]; for (const s of filSuggestions()) { const l = s.best[0]; if (l && !list.some((y) => y.name === l.name && y.hex === l.hex)) list.push({ name: l.name, hex: l.hex, type: l.type || '' }); } C.fields.filaments = list.slice(0, 16); saveFields(); certControls(); renderCert(); }
+    else if (b.id === 'cFilCustom') { const n = $('cFilName').value.trim(); if (!n) { $('cFilName').focus(); return; } addFil({ name: n, hex: $('cFilHex').value, type: $('cFilType').value.trim() }); }
     else if (b.id === 'cUndo') undoTouchUp();
     else if (b.dataset.cdel != null) { const list = [...colorList()]; list.splice(Number(b.dataset.cdel), 1); C.fields.colors = list; saveFields(); certControls(); renderCert(); }
     else if (b.id === 'cColAdd') { C.fields.colors = [...colorList(), '#888888']; saveFields(); certControls(); renderCert(); const ins = $('certControls').querySelectorAll('[data-ci]'); const last = ins[ins.length - 1]; if (last) last.click(); }

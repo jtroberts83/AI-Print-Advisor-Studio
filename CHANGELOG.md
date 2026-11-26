@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.52.0
+- Certificates, **Remove the background**: a model in several pieces (a plaque or base, a rope, separate parts) no
+  longer loses pieces. The closer second look could drop whole pieces the first look found; now it only tidies the
+  edges. When the certificate combines several prints, the AI keeps every piece it finds, and Claude's check is told
+  the model is in several pieces.
+- New **➕ Add a missed piece**: drag a box around a piece the cut-out left out; the AI looks inside the box and adds
+  it, keeping everything else.
+- **Rotate** (⟲ ⟳, a quarter turn) and **Straighten** (±15°) in Touch up (now **🎨 Touch up / rotate photo**).
+- **🧵 Filaments used**: pick the filaments the print(s) were made with from your filament library (best matches for
+  the print's own filaments are suggested; search the library, or type one that isn't in it). They are listed under
+  the photo with their colors.
+
 ## 2.51.0
 - Certificates: six new holiday templates, each with its own drawings, colors, wording and seal: **Mistletoe**,
   **Winter tree** (snowy Christmas trees), **Gingerbread** (gingerbread people), **Wrapped presents**, **Reindeer**

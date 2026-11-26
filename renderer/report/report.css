@@ -133,7 +133,15 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .chead h1 { margin: 2px 0 0; font-family: var(--f-title); font-size: 32pt; line-height: 1.05; color: var(--c-1); font-weight: 700; letter-spacing: .01em; }
 .cbody { flex: 1; display: grid; grid-template-columns: 3.75in 1fr; grid-template-rows: minmax(0, 1fr); gap: 0.32in; min-height: 0; }
 /* the photo's cell: the frame inside it takes the photo's shape (--ar = width ÷ height), as large as fits, centered */
-.pcell { min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; container-type: size; }
+.pcell { flex: 1; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; container-type: size; }
+.pcol { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cfils { flex: none; font-size: 8.6pt; line-height: 1.25; background: var(--c-soft); border-radius: 8px; padding: 5px 9px; }
+.cfils .cfh { font-size: 7pt; text-transform: uppercase; letter-spacing: .12em; color: var(--c-2); font-weight: 700; font-family: "Segoe UI", system-ui, sans-serif; margin-bottom: 2px; }
+.cfils ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px 10px; }
+.cfils ul.two { grid-template-columns: 1fr 1fr; }
+.cfils li { display: flex; align-items: center; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.cfils li i { color: #5a6474; font-style: normal; font-size: .9em; }
+.cfils .sw { flex: none; width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); }
 .cphoto[style*="--ar"] { box-sizing: content-box; aspect-ratio: var(--ar); width: min(calc(100cqw - 12px), calc((100cqh - 12px) * var(--ar))); height: auto; }   /* the 6 px white edge is outside the photo's shape */
 .cphoto:not([style*="--ar"]) { width: 100%; height: 100%; }
 .cphoto { margin: 0; min-height: 0; position: relative; border-radius: 10px; background: #fff; border: 6px solid #fff; box-shadow: 0 0 0 2px var(--c-2), 0 6px 18px rgba(0,0,0,.18); overflow: hidden; display: flex; }
@@ -292,3 +300,13 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 #cFonts.on { border-color: #7c6ce0; }
 .chip.say { max-width: 100%; white-space: normal; }
 .saylen select { font: inherit; padding: 3px 6px; border: 1px solid #c7ccd6; border-radius: 7px; background: #fff; margin-left: 4px; }
+.fchip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 4px 3px 8px; border: 1px solid #d5dae3; border-radius: 999px; font-size: 13px; background: #fff; }
+.fchip .sw, .frow2 .sw, .fsug .sw { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); vertical-align: middle; flex: none; }
+.fchip .cdel { position: static; }
+.filbox .fillib { max-height: 260px; overflow: auto; display: grid; gap: 2px; }
+.frow2 { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 4px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; font: inherit; cursor: pointer; }
+.frow2:hover, .frow2:focus-visible { border-color: var(--accent); background: #f3f6fd; }
+.frow2 > span:nth-child(2) { flex: 1; }
+.fsug { display: grid; gap: 2px; margin-bottom: 6px; }
+.filbox input[type=text] { font: inherit; padding: 4px 6px; border: 1px solid #c7ccd6; border-radius: 7px; }
+.pe-rot { align-items: center; } .pe-rot .pe-rl { font-weight: 600; font-size: 13px; } .pe-rot .pe-str { flex: 1; min-width: 140px; margin: 0; }

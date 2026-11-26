@@ -2656,6 +2656,8 @@ function certEdit(e) {
   for (const [k, lo, hi] of [['exposure', -100, 100], ['contrast', -100, 100], ['saturation', -100, 100], ['warmth', -100, 100], ['hue', -180, 180], ['sharpen', 0, 100], ['tolerance', 1, 100], ['soften', 0, 20], ['margin', 0, 25]]) {
     const v = Number(e[k]); if (Number.isFinite(v)) out[k] = Math.max(lo, Math.min(hi, v));
   }
+  const rot = Math.round(Number(e.rotate) / 90) * 90; if ([90, 180, 270].includes(rot)) out.rotate = rot;
+  const str = Number(e.straighten); if (Number.isFinite(str) && str) out.straighten = Math.max(-15, Math.min(15, Math.round(str * 2) / 2));
   out.removeBg = e.removeBg === true;
   out.trim = e.trim !== false;
   if (Array.isArray(e.box) && e.box.length === 4 && e.box.every(v => Number.isFinite(+v) && +v >= 0 && +v <= 1)) out.box = e.box.map(Number);
@@ -2699,6 +2701,12 @@ ipcMain.handle('cert-camera-photo', async (_e, jobId, id) => { await S.ready;
   if (!c) return null;
   return `data:image/jpeg;base64,${(await fs.readFile(path.join(app.getPath('userData'), 'monitor', 'gallery', c.pid, c.file))).toString('base64')}`;
 });
+// the filament library (what's on hand on the Filament screen), for 🧵 Filaments used on a certificate
+ipcMain.handle('cert-filaments', async () => {
+  const st = Fil.stock();
+  return (st ? st.filaments : []).map(f => ({ name: [f.brand, f.line, f.color].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim(), type: f.type || '', finish: f.finish || '',
+    hex: Inv.mainHex(f), preset: f.preset || '' })).filter(f => f.name);
+});
 // fields: { name, to, from, message, template, weight, edit }; photo: a data: URL (new photo), null (remove it) or undefined (keep);
 // original: the photo before Touch up (same values), so edits can be changed or undone later
 // mask: the cut-out (a gray PNG) from Touch up, so the next Touch up starts from it (same values as photo)
@@ -2722,6 +2730,9 @@ ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original, mask) => {
     }
     if (Object.keys(fonts).length) clean.fonts = fonts;
   }
+  // 🧵 Filaments used (listed under the photo): { name, hex, type } each, as picked (from the library or typed)
+  if (Array.isArray(f.filaments)) clean.filaments = f.filaments.filter(x => x && typeof x === 'object' && certText(x.name, 90).trim())
+    .map(x => ({ name: certText(x.name, 90).trim(), hex: /^#[0-9a-f]{6}$/i.test(x.hex) ? x.hex.toLowerCase() : '#888888', type: certText(x.type, 24).trim() })).slice(0, 16);
   if (Array.isArray(f.colors)) clean.colors = f.colors.filter(c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)).map(c => c.toLowerCase()).slice(0, 16);
   await fs.writeFile(path.join(certDir(), k + '.json'), JSON.stringify(clean));
   const store = async (base, pic) => {
@@ -2789,7 +2800,7 @@ const CUTOUT_SCHEMA = {
 };
 const CUTOUT_SYSTEM = `You check background removal for a photo of a 3D printed model that goes on a printable certificate.
 You get two images of the same size: 1) the original photo, 2) the current cut-out, where everything the background remover removed is pure bright green.
-Find the physical 3D printed object itself (including any stand or base that is part of the print). Reflections of it (for example in a glass or glossy table), shadows, the table or surface it sits on, cables, walls and other things are background, even when they touch the object.
+Find the physical 3D printed object itself (including any stand or base that is part of the print). It can be made of several printed pieces (a base, a plaque or backboard, separate parts, decorations): all of them are the object. Reflections of it (for example in a glass or glossy table), shadows, the table or surface it sits on, cables, walls and other things are background, even when they touch the object.
 Give model_box: the tightest box around the object alone in image 1, as integers from 0 to 1000 (0,0 is the top left; 1000 is the full width or height). Make it tight but don't cut off any part of the object.
 Then look at image 2: set clean to true only if no background is left and no part of the object is missing. Otherwise list leftovers as boxes (0-1000) and say what each is.
 advice: one short, friendly sentence for the user.`;
@@ -2798,7 +2809,7 @@ ipcMain.handle('cutout-claude-info', async () => {
   const cfg = await readConfig(), model = cfg.model || DEFAULT_MODEL;
   return { hasKey: !!(await getApiKey()), usd: Spend.costOf(model, { input_tokens: CUTOUT_EST.inTok, output_tokens: CUTOUT_EST.outTok }), tour: DEMO };
 });
-ipcMain.handle('cutout-claude', async (_e, photo, cut) => {
+ipcMain.handle('cutout-claude', async (_e, photo, cut, pieces) => {
   if (DEMO) throw new Error('The tour doesn’t ask the AI.');
   if (!(await getApiKey())) throw new Error('Add your Anthropic API key in Settings (main window) to let Claude check the photo.');
   const a = typeof photo === 'string' && PHOTO_DATA.exec(photo), b = typeof cut === 'string' && PHOTO_DATA.exec(cut);
@@ -2808,6 +2819,8 @@ ipcMain.handle('cutout-claude', async (_e, photo, cut) => {
     { type: 'image', source: { type: 'base64', media_type: `image/${a[1]}`, data: a[2] } }, { type: 'text', text: 'Image 1: the original photo.' },
     { type: 'image', source: { type: 'base64', media_type: `image/${b[1]}`, data: b[2] } }, { type: 'text', text: 'Image 2: the current cut-out (removed parts are bright green).' },
   ];
+  const n = Math.min(50, Math.max(1, Math.round(Number(pieces) || 1)));
+  if (n > 1) content.push({ type: 'text', text: `This model was printed in ${n} separate prints, so it is in several pieces. model_box must include every printed piece, and any printed piece missing from the cut-out is a leftover to report.` });
   const data = await filamentClaude({ model, max_tokens: 3000, system: CUTOUT_SYSTEM, output_config: { format: { type: 'json_schema', schema: CUTOUT_SCHEMA } }, messages: [{ role: 'user', content }] });
   if (data.stop_reason === 'refusal') throw new Error('Claude declined to look at this photo.');
   let r = null;
