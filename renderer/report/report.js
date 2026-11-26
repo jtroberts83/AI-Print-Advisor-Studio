@@ -373,7 +373,7 @@
       <div class="paper">
         <header class="chead"><div class="kicker">${esc(tp.kicker)}</div><h1>${tp.letters ? rainbowText(tp.title, tp.letters) : esc(tp.title)}</h1></header>
         <div class="cbody">
-          <div class="pcell"><figure class="cphoto ${photo ? '' : 'none'}"${ar ? ` style="--ar:${ar.toFixed(4)}"` : ''}>${photo ? `<img src="${esc(photo)}" alt="" style="object-fit:${C.photo ? 'cover' : 'contain'}">` : '<span>Add a photo</span>'}
+          <div class="pcell"><figure class="cphoto ${photo ? '' : 'none'} ${C.photo && C.fields.edit && C.fields.edit.removeBg ? 'cutout' : ''}"${ar ? ` style="--ar:${ar.toFixed(4)}"` : ''}>${photo ? `<img src="${esc(photo)}" alt="" style="object-fit:${C.photo ? 'cover' : 'contain'}">` : '<span>Add a photo</span>'}
             ${colors.length ? `<figcaption>${colors.map((x) => `<span class="sw" style="background:${esc(x.color)}"></span>`).join('')}</figcaption>` : ''}</figure></div>
           <div class="cinfo">
             <div class="intro">${esc(tp.intro)}</div>
@@ -473,7 +473,8 @@
     if (!C.photo || !window.PhotoEdit) return;
     const certEl = $('cert').querySelector('.cert');
     const paper = certEl ? getComputedStyle(certEl).getPropertyValue('--c-bg').trim() || '#ffffff' : '#ffffff';
-    const r = await window.PhotoEdit.open({ src: C.original || C.photo, params: C.fields.edit, paper });
+    const cutout = api.cutoutRun ? { status: api.cutoutStatus, download: api.cutoutDownload, onProgress: api.onCutoutProgress, run: api.cutoutRun } : null;
+    const r = await window.PhotoEdit.open({ src: C.original || C.photo, params: C.fields.edit, paper, cutout });
     if (!r) return;
     if (!C.original) C.original = C.photo;
     C.photo = r.dataUrl; C.fields.edit = r.params;
@@ -519,14 +520,19 @@
     } catch (e) { C.ideasErr = String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); }
     C.ideasBusy = false; certControls();
   }
+  // the list of ideas can be folded away (remembered); new ideas open it again
+  const ideasShut = () => { try { return localStorage.getItem('aipa.ideasShut') === '1'; } catch { return false; } };
+  const setIdeasShut = (v) => { try { localStorage.setItem('aipa.ideasShut', v ? '1' : '0'); } catch {} };
   function ideasHtml() {
     const ai = C.ai || {}, i = C.ideas;
     const cost = ai.usd != null ? `about ${ai.usd < 0.01 ? '1' : Math.round(ai.usd * 100)}¢` : '';
     const btn = ai.tour ? '' : ai.hasKey
       ? `<button class="btn" id="cIdeas" ${C.ideasBusy ? 'disabled' : ''} title="Claude looks at the model and suggests fun names and short sayings. Uses your API key.">${C.ideasBusy ? '<span class="spin"></span> Thinking up ideas…' : i ? '✨ More ideas' : '✨ AI ideas: fun names and sayings'}</button><span class="muted small">${cost}${cost ? ' each time, with your API key' : ''}</span>`
       : '<span class="muted small">✨ AI name and saying ideas: add your Anthropic API key in Settings (main window) to use them.</span>';
-    return `<div class="row ideas">${btn}${C.ideasErr ? `<span class="warn small">${esc(C.ideasErr)}</span>` : ''}</div>
-      ${i ? `<div class="ideabox">${i.what ? `<div class="muted small">Claude thinks this is ${esc(i.what)}. Click an idea to use it.</div>` : ''}
+    const shut = !!i && ideasShut();
+    const fold = i ? `<button class="btn fold" id="cIdeasFold" aria-expanded="${!shut}" title="${shut ? 'Show' : 'Hide'} the names and sayings">${shut ? `▸ Show ideas (${i.names.length} names, ${i.sayings.length} sayings)` : '▾ Hide ideas'}</button>` : '';
+    return `<div class="row ideas">${btn}${fold}${C.ideasErr ? `<span class="warn small">${esc(C.ideasErr)}</span>` : ''}</div>
+      ${i && !shut ? `<div class="ideabox">${i.what ? `<div class="muted small">Claude thinks this is ${esc(i.what)}. Click an idea to use it.</div>` : ''}
         <div class="chips"><span class="lbl small">Names</span>${i.names.map((n) => `<button class="chip" data-name="${esc(n.name)}" title="${esc(n.style)}">${esc(n.name)}</button>`).join('')}</div>
         <div class="chips"><span class="lbl small">Sayings</span>${i.sayings.map((x) => `<button class="chip say" data-say="${esc(x)}">${esc(x)}</button>`).join('')}</div>
         ${i.spent ? `<div class="muted small">Spent on ideas for this print: $${i.spent.toFixed(3)}</div>` : ''}</div>` : ''}`;
@@ -601,7 +607,8 @@
     else if (b.id === 'cNoPhoto') { await setPhoto(null); }
     else if (b.id === 'cTouch') touchUp();
     else if (b.id === 'cUndo') undoTouchUp();
-    else if (b.id === 'cIdeas') askIdeas();
+    else if (b.id === 'cIdeas') { setIdeasShut(false); askIdeas(); }
+    else if (b.id === 'cIdeasFold') { setIdeasShut(!ideasShut()); certControls(); }
     else if (b.dataset.name != null) { C.fields.name = b.dataset.name; $('cName').value = b.dataset.name; saveFields(); renderCert(); }
     else if (b.dataset.say != null) { C.fields.message = b.dataset.say; $('cMsg').value = b.dataset.say; saveFields(); renderCert(); }
     else if (b.dataset.pw) usePhonePhoto(b.dataset.pw);

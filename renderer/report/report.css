@@ -133,6 +133,8 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .cphoto { margin: 0; min-height: 0; position: relative; border-radius: 10px; background: #fff; border: 6px solid #fff; box-shadow: 0 0 0 2px var(--c-2), 0 6px 18px rgba(0,0,0,.18); overflow: hidden; display: flex; }
 .cphoto img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: #fff; }
 .cphoto.none { align-items: center; justify-content: center; color: #9aa3b2; background: repeating-linear-gradient(45deg, #f4f6f9 0 10px, #fff 10px 20px); }
+.cphoto.cutout, .cphoto.cutout img { background: transparent; }   /* a cut-out (transparent PNG) sits on the certificate itself */
+.cphoto.cutout { border-color: transparent; }
 .cphoto figcaption { position: absolute; left: 8px; bottom: 8px; display: flex; gap: 4px; padding: 4px 6px; border-radius: 999px; background: rgba(255,255,255,.9); }
 .cphoto .sw { width: 16px; height: 16px; }
 .cinfo { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
@@ -199,6 +201,7 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 
 /* certificate: AI ideas and the photo touch up */
 .ideas { gap: 10px !important; }
+.ideas .fold { font-size: 13px; padding: 4px 10px; }
 .ideabox { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fbfaff; display: flex; flex-direction: column; gap: 6px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; } .chips .lbl { width: 62px; font-weight: 700; }
 .chip { font: inherit; font-size: 13px; border: 1px solid #c9c2f0; background: #fff; color: #3b2f8f; border-radius: 999px; padding: 3px 11px; cursor: pointer; }
@@ -207,8 +210,8 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 @keyframes spin { to { transform: rotate(360deg); } }
 .pe-wrap { position: fixed; inset: 0; z-index: 50; background: rgba(15,20,30,.72); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .pe { background: #fff; border-radius: 14px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 0; width: min(1240px, 100%); height: min(820px, 100%); overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
-.pe-view { position: relative; background: repeating-conic-gradient(#e9ecf1 0 25%, #f6f7f9 0 50%) 0 0 / 20px 20px; display: flex; align-items: center; justify-content: center; padding: 14px; min-height: 0; }
-.pe-view canvas { max-width: 100%; max-height: 100%; box-shadow: 0 4px 18px rgba(0,0,0,.2); background: #fff; }
+.pe-view { position: relative; background: #e3e6eb; display: flex; align-items: center; justify-content: center; padding: 14px; min-height: 0; }
+.pe-view canvas { max-width: 100%; max-height: 100%; box-shadow: 0 4px 18px rgba(0,0,0,.2); background: var(--pe-paper, #fff); }   /* the certificate's color, behind a cut-out */
 .pe-busy { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.7); color: #fff; padding: 5px 12px; border-radius: 999px; font-size: 13px; }
 .pe-side { padding: 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 10px; border-left: 1px solid var(--line); }
 .pe-side h2 { margin: 0; font-size: 18px; }

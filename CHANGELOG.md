@@ -1,6 +1,13 @@
 # Changelog
 
-## 2.41.1
+## 2.42.0
+- Certificates: **Remove the background** is now done by an AI model on your PC (BiRefNet), so it cuts the model out
+  cleanly, even fine leaves and lashes, where the old way left smudges and holes. The model downloads once (224 MB,
+  checked before it's used, then it works offline) and takes a few seconds per photo. Your photo never leaves your
+  PC. The cut-out sits right on the certificate, so the background always matches the template, even if you switch
+  templates later.
+- Certificates: the AI names and sayings can be folded away (**▾ Hide ideas** / **▸ Show ideas**) so they don't take
+  up the page.
 - Print history: **📊 Stats…**, **📄 Report…** and **↻ Refresh** sit in one row under the note, as clear teal
   buttons (they were squeezed beside the note, with their names broken over two lines).
 

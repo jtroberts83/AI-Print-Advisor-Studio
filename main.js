@@ -2658,6 +2658,12 @@ Match the occasion and tone of the certificate template. Keep everything family-
 const CERT_OCCASION = { fancy: 'an elegant keepsake', professional: 'a professional or business piece (tone: polished, light humor at most)', kids: 'a toy for a child (tone: playful, simple words)',
   christmas: 'a Christmas gift', birthday: 'a birthday gift', rainbow: 'a fun, colorful gift' };
 const CERT_EST = { inTok: 4500, outTok: 900 };
+// background removal for certificate photos, on this PC (src/cutout.js): the model downloads once (asked first)
+let cutoutObj = null;
+const Cut = () => (cutoutObj ||= new (require('./src/cutout').Cutout)(path.join(app.getPath('userData'), 'models')));
+ipcMain.handle('cutout-status', () => Cut().status());
+ipcMain.handle('cutout-download', (e) => Cut().download((got, total) => { if (!e.sender.isDestroyed()) e.sender.send('cutout-progress', got, total); }));
+ipcMain.handle('cutout-run', (_e, rgba) => Cut().run(rgba));
 ipcMain.handle('cert-ai-info', async () => {
   const cfg = await readConfig(), model = cfg.model || DEFAULT_MODEL;
   return { hasKey: !!(await getApiKey()), usd: Spend.costOf(model, { input_tokens: CERT_EST.inTok, output_tokens: CERT_EST.outTok }), tour: DEMO };
