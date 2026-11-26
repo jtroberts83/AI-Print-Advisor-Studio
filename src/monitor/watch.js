@@ -200,6 +200,10 @@ class PrinterWatch extends EventEmitter {
     }
     if (fname && fname !== this.meta._filename && !this.metaLoading) this.loadMetadata(fname);
     // the layer being printed, kept so a cancel or error can say where it stopped (the printer may clear it afterwards)
+    if (st === 'printing') {   // exactly where it is in the file, and the nozzle's height (kept in memory; saved when it stops)
+      const pos = Number((this.s.virtual_sdcard || {}).file_position) || 0, gp = (this.s.gcode_move || {}).gcode_position;
+      if (pos > 0) this.lastPoint = { file: fname, pos, z: Array.isArray(gp) && Number.isFinite(gp[2]) ? Math.round(gp[2] * 1000) / 1000 : null };
+    }
     if (ACTIVE.has(st)) {
       const info = ps.info || {}, cur = Number(info.current_layer) || 0;
       if (cur > 0 && (cur !== job.last_layer || job.layer_file !== fname)) {
@@ -262,7 +266,9 @@ class PrinterWatch extends EventEmitter {
   recordStop(fname, status) {
     const job = this.job;
     if (!fname || job.layer_file !== fname || !job.last_layer) return;
-    const rec = { filename: fname, status, layer: job.last_layer, total: job.total_layer || null, filament_mm: job.last_filament || null, at: Math.round(Date.now() / 1000) };
+    const pt = this.lastPoint && this.lastPoint.file === fname ? this.lastPoint : null;
+    const rec = { filename: fname, status, layer: job.last_layer, total: job.total_layer || null, filament_mm: job.last_filament || null, at: Math.round(Date.now() / 1000),
+      file_position: pt ? pt.pos : null, z: pt ? pt.z : null };
     try {
       const list = this.stops();
       list.unshift(rec);

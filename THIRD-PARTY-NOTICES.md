@@ -6,6 +6,7 @@ AI 3D Print Advisor Studio is licensed under the GNU Affero General Public Licen
 |---|---|---|
 | [Electron](https://www.electronjs.org/) | Desktop app runtime | MIT |
 | [three.js](https://threejs.org/) 0.169.0 (`renderer/vendor/three.module.js`, `renderer/vendor/OrbitControls.js`) | 3D model viewer | MIT, © 2010-2024 three.js authors |
+| [earcut](https://github.com/mapbox/earcut) 2.2.4, as ported in three.js (`src/earcut.js`) | Closing the cut face in Print the rest | ISC, © 2016 Mapbox |
 | [JSZip](https://stuk.github.io/jszip/) 3.10.1 | Reading and writing .3mf files (zip archives) | MIT (dual-licensed MIT or GPLv3; used under MIT) |
 | [ws](https://github.com/websockets/ws) 8.18.0 | Talking to printers over Moonraker's websocket | MIT |
 | [electron-builder](https://www.electron.build/) | Packaging (build tool only, not shipped) | MIT |

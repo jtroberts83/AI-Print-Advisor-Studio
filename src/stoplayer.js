@@ -9,7 +9,9 @@
 class StopFinder {
   // targetMm: the filament the print used; or untilLayer: the layer it stopped on (known from the Print Monitor),
   // then the file is read only to learn that layer's height
-  constructor(targetMm, untilLayer = 0) {
+  // untilByte: the printer's position in the file when it stopped (exact): read to there
+  constructor(targetMm, untilLayer = 0, untilByte = 0) {
+    this.untilByte = Math.max(0, Number(untilByte) || 0); this.pos = 0;
     this.target = Math.max(0, Number(targetMm) || 0);
     this.until = Math.max(0, Math.floor(Number(untilLayer) || 0));
     this.rel = false;        // M83 (relative E) or M82 (absolute)
@@ -55,7 +57,11 @@ class StopFinder {
     this.bytes += text.length;
     const lines = (this.rest + text).split('\n');
     this.rest = lines.pop();
-    for (const l of lines) { this.line(l.trim()); if (this.done) return true; }
+    for (const l of lines) {
+      if (this.untilByte && this.pos >= this.untilByte) { this.done = true; return true; }
+      this.pos += Buffer.byteLength(l, 'utf8') + 1;
+      this.line(l.trim()); if (this.done) return true;
+    }
     return false;
   }
   // { layer, total, z (top of the layer it stopped on), doneZ (top of the last whole layer), layerHeight }
@@ -70,9 +76,9 @@ class StopFinder {
 // out. fetchImpl(url, { headers, signal }) is the web fetch; returns StopFinder.result() or throws.
 // size: the file's size when it was printed (Moonraker's history keeps it): a file since replaced under the same
 // name (re-sliced) is a different print, so it isn't read
-async function findStop({ url, apiKey, filamentMm, untilLayer = 0, size = null, fetchImpl = fetch, timeoutMs = 600000 }) {
+async function findStop({ url, apiKey, filamentMm, untilLayer = 0, untilByte = 0, size = null, fetchImpl = fetch, timeoutMs = 600000 }) {
   const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), timeoutMs);
-  const f = new StopFinder(filamentMm, untilLayer);
+  const f = untilByte ? new StopFinder(0, 0, untilByte) : new StopFinder(filamentMm, untilLayer);
   try {
     const headers = apiKey ? { 'X-Api-Key': apiKey } : {};
     const gone = () => Object.assign(new Error('That G-code is no longer on the printer.'), { code: 'gone' });

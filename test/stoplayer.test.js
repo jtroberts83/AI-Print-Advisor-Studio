@@ -54,6 +54,14 @@ test('with the layer known (from the Print Monitor) it reads just to that layer 
   assert.strictEqual(r.layer, 5); assert.strictEqual(r.z, 1.04); assert.strictEqual(r.doneZ, 0.84);
 });
 
+test('with the printer’s position in the file (from the Print Monitor) it stops exactly there', () => {
+  const text = gcode(), at = text.indexOf('CURRENT_LAYER=6\n') + 60;   // part way into layer 6
+  const f = new StopFinder(0, 0, at);
+  f.feed(text);
+  const r = f.result();
+  assert.strictEqual(r.layer, 6); assert.strictEqual(r.z, 1.24); assert.strictEqual(r.doneZ, 1.04);
+});
+
 test('findStop reads from the printer only as far as needed, and says when the G-code is gone', async () => {
   const text = gcode({ layers: 400 });
   let sent = 0, pulled = 0;
@@ -91,10 +99,11 @@ test('the Print Monitor records the layer a cancelled print stopped on', async (
     connectionFactory: () => conn, cameraFactory: () => new FakeCam() });
   conn.set({ print_stats: { state: 'standby', filename: '' }, heater_bed: { temperature: 25 } }); await tick();
   conn.set({ print_stats: { state: 'printing', filename: 'Deer.gcode', info: { current_layer: 41, total_layer: 300 }, filament_used: 9000 } }); await tick();
-  conn.set({ print_stats: { info: { current_layer: 42, total_layer: 300 } } }); await tick();
+  conn.set({ print_stats: { info: { current_layer: 42, total_layer: 300 } }, virtual_sdcard: { file_position: 123456 }, gcode_move: { gcode_position: [10, 20, 8.44, 0] } }); await tick();
   conn.set({ print_stats: { state: 'cancelled', info: { current_layer: 0, total_layer: 300 } } }); await tick();   // cleared by the cancel
   const s = w.stops();
   assert.strictEqual(s.length, 1);
   assert.deepStrictEqual({ f: s[0].filename, l: s[0].layer, t: s[0].total, st: s[0].status }, { f: 'Deer.gcode', l: 42, t: 300, st: 'cancelled' });
+  assert.strictEqual(s[0].file_position, 123456); assert.strictEqual(s[0].z, 8.44);
   w.stop();
 });

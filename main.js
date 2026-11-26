@@ -2474,12 +2474,18 @@ ipcMain.handle('history-stop', async (_e, jobId) => { await S.ready;
     let found = null, note = null, gone = false;
     if (printer && !FAKE_PRINTER) {
       const url = `${String(printer.url).trim().replace(/\/+$/, '').replace(/^(?!https?:\/\/)/, 'http://')}/server/files/gcodes/${String(j.filename).split('/').map(encodeURIComponent).join('/')}`;
-      try { found = await require('./src/stoplayer').findStop({ url, apiKey: printer.apiKey, filamentMm: j.filamentMm, untilLayer: seen ? seen.layer : 0, size: j.fileSize }); }
+      try { found = await require('./src/stoplayer').findStop({ url, apiKey: printer.apiKey, filamentMm: j.filamentMm, untilLayer: seen ? seen.layer : 0, untilByte: seen && seen.file_position ? seen.file_position : 0, size: j.fileSize }); }
       catch (e) { note = e.code === 'gone' ? 'The G-code is no longer on the printer, so the layer can’t be worked out.' : e.code === 'changed' ? 'The G-code on the printer has been replaced since this print (same name, different file), so the layer can’t be worked out.' : `Couldn’t read the G-code: ${e.message}`; gone = e.code === 'gone' || e.code === 'changed'; }
     }
     let out;
-    if (seen) out = { layer: seen.layer, total: seen.total || (found && found.total) || j.layers || null, exact: true,
-      z: found && found.layer === seen.layer ? found.z : null, doneZ: found && found.layer === seen.layer ? found.doneZ : null, layerHeight: found ? found.layerHeight : null };
+    // what the Print Monitor saw (the layer, and where in the file the printer was): exact
+    if (seen && found && found.layer > 0 && seen.file_position) out = { layer: found.layer, total: found.total || seen.total || j.layers || null, exact: true, z: found.z, doneZ: found.doneZ, layerHeight: found.layerHeight };
+    else if (seen) {
+      const same = found && found.layer === seen.layer, lh = Number(j.layerHeight) || null;
+      out = { layer: seen.layer, total: seen.total || (found && found.total) || j.layers || null, exact: true,
+        z: same ? found.z : seen.z ?? null, doneZ: same ? found.doneZ : (seen.z != null && lh ? Math.round((seen.z - lh) * 1000) / 1000 : null), layerHeight: same ? found.layerHeight : lh };
+      if (!same && seen.z != null) out.nozzle = true;   // from the nozzle's height, not the G-code
+    }
     else if (found && found.layer > 0) out = { layer: found.layer, total: found.total || j.layers || null, exact: false, z: found.z, doneZ: found.doneZ, layerHeight: found.layerHeight };
     else { const none = { none: note || 'Couldn’t work out the layer.' }; if (gone) await S.printLog.setStop(jobId, none); return none; }
     if (note) out.note = note;
@@ -2488,6 +2494,53 @@ ipcMain.handle('history-stop', async (_e, jobId) => { await S.ready;
   })().finally(() => stopRuns.delete(jobId));
   stopRuns.set(jobId, run);
   return run;
+});
+// ✂ Print the rest: the project this print came from, cut at the height it stopped at (src/cutrest.js), saved as a
+// new .3mf next to it and (if wanted) opened in Snapmaker Orca. The original project isn't changed.
+ipcMain.handle('history-print-rest', async (_e, { jobId, z }) => { await S.ready;
+  const j = (S.lastJobs || []).find((x) => x.id === jobId);
+  if (!j) throw new Error('That print is no longer in the list. Refresh Print history.');
+  const h = Math.round(Number(z) * 1000) / 1000;
+  if (!(h > 0 && h < 2000)) throw new Error('Type the height to cut at, in mm.');
+  const name = String(j.filename || '').split('/').pop().replace(/\.gcode$/i, '');
+  const guess = j.run && j.run.modelPath && fss.existsSync(j.run.modelPath) ? j.run.modelPath : null;
+  const pick = await dialog.showOpenDialog(win, { title: `Choose the project “${name}” was printed from`, defaultPath: guess || undefined,
+    filters: [{ name: '3MF project', extensions: ['3mf'] }], properties: ['openFile'] });
+  if (pick.canceled || !pick.filePaths[0]) return null;
+  const src = pick.filePaths[0], buf = await fs.readFile(src);
+  const { load3mf } = require('./src/threemf');
+  const proj = await load3mf(buf);
+  let plate = null;
+  if (proj.plates.length > 1) {
+    const m = /_plate_(\d+)$/i.exec(name), n = m ? +m[1] : 0;
+    if (n && proj.plates.some((p) => p.index === n)) plate = n;
+    else {
+      const list = proj.plates.slice(0, 8);
+      const c = await dialog.showMessageBox(win, { type: 'question', title: 'Print the rest', message: `Which plate was “${name}”?`,
+        detail: 'Only the objects on that plate are cut.', buttons: [...list.map((p) => `Plate ${p.index}${p.name ? `: ${p.name}` : ''}`), 'Cancel'], cancelId: list.length });
+      if (c.response >= list.length) return null;
+      plate = list[c.response].index;
+    }
+  }
+  progress(`Cutting the models at ${h} mm…`);
+  const r = await require('./src/cutrest').printTheRest(buf, { z: h, plate, onProgress: progress });
+  const ps = proj.projectSettings || {};
+  if (Number(ps.raft_layers) > 0) r.warnings.unshift('This project prints on a raft, so the heights in the G-code include the raft: measure the part and check the cut height.');
+  const def = path.join(path.dirname(src), `${path.basename(src, path.extname(src))} - rest from ${h} mm.3mf`);
+  const save = await dialog.showSaveDialog(win, { title: 'Save the rest of the model as', defaultPath: def, filters: [{ name: '3MF project', extensions: ['3mf'] }] });
+  if (save.canceled || !save.filePath) return null;
+  if (path.resolve(save.filePath) === path.resolve(src)) throw new Error('Save it under a new name, so your original project stays as it is.');
+  await fs.writeFile(save.filePath, r.buffer);
+  const exe = S.slicer && S.slicer.exe;
+  const c = await dialog.showMessageBox(win, { type: 'info', title: 'Print the rest', message: `Saved ${path.basename(save.filePath)}`,
+    detail: [`Cut at ${h} mm: ${r.cut.join(', ')}${r.cut.length ? ' (the part above, lowered onto the bed)' : ''}.`,
+      r.done.length ? `Already finished, turned off: ${r.done.join(', ')}.` : '', ...r.warnings,
+      'Check it in Snapmaker Orca and slice it as usual.'].filter(Boolean).join('\n\n'),
+    buttons: exe && fss.existsSync(exe) ? ['Open in Snapmaker Orca', 'Show in folder', 'Done'] : ['Show in folder', 'Done'], defaultId: 0 });
+  const btn = exe && fss.existsSync(exe) ? c.response : c.response + 1;
+  if (btn === 0) { const child = spawn(exe, [save.filePath], { detached: true, stdio: 'ignore', windowsHide: false, cwd: path.dirname(exe) }); child.on('error', () => {}); child.unref(); }
+  else if (btn === 1) shell.showItemInFolder(save.filePath);
+  return { file: save.filePath, cut: r.cut, done: r.done };
 });
 ipcMain.handle('history-rate', async (_e, { jobId, rating, note }) => { await S.ready; await S.printLog.rate(jobId, rating, note); return true; });
 

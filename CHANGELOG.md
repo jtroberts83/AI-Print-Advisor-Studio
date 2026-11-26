@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.47.0
+- Print history: **✂ Print the rest…** on a cancelled or failed print. Choose the project (.3mf) it was printed from
+  (and the plate, if it has several): every object on that plate is cut at the height it stopped at (you can change
+  it), closed flat at the cut and lowered onto the bed, in a new 3MF next to your project (the project itself isn't
+  changed). Objects that had already finished are kept but turned off, and parts entirely below the cut are taken
+  out. Your settings, per-object settings, filament per part and painted colors stay. Then open it in Snapmaker Orca,
+  slice and print, and glue the top on. Variable layer heights and old sliced G-code in the project are taken out.
+- **Exact stop point**: when the Print Monitor sees a print stop, it now also keeps where in the file the printer was
+  and the nozzle's height, so the layer and the cut height are exact (not worked out from the filament). If the
+  G-code is later deleted from the printer, the nozzle's height is still known.
+
 ## 2.46.0
 - **Print history: where a cancelled or failed print stopped.** Each cancelled or failed print shows the layer it
   stopped on (“Stopped on layer 788 of 1124, 126.24 mm high”) and the height to cut the model at to print just the

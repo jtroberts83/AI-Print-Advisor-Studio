@@ -2058,9 +2058,12 @@ function stopHtml(s) {
   if (s.none) return `<span class="muted">⏹ ${esc(s.none)}</span>`;
   const about = s.exact ? '' : 'about ';
   let h = `⏹ Stopped on ${about}layer <b>${s.layer}</b>${s.total ? ` of ${s.total}` : ''}${s.z != null ? ` (${about}${mmText(s.z)} high)` : ''}`;
-  h += s.exact ? ' <span class="muted">as the printer reported it</span>' : ' <span class="muted" title="Worked out from the filament the print used and its G-code. It’s usually within a few layers: check the part before cutting.">worked out from the filament used ⓘ</span>';
+  h += s.exact ? ` <span class="muted">as the printer reported it${s.nozzle ? ' (the height is where the nozzle was)' : ''}</span>` : ' <span class="muted" title="Worked out from the filament the print used and its G-code. It’s usually within a few layers: check the part before cutting.">worked out from the filament used ⓘ</span>';
   if (s.layer <= 1) h += '<br><span class="muted">That’s the first layer: print the whole model again.</span>';
-  else if (s.doneZ != null) h += `<br>To print the rest: in Snapmaker Orca, cut the model at <b>${mmText(s.doneZ)}</b> (the top of layer ${s.layer - 1}, the last whole one) and print the top part. <button type="button" class="btn small" data-copycut="${s.doneZ}" title="Copy ${mmText(s.doneZ)} to paste into Orca’s Cut tool">📋 Copy ${mmText(s.doneZ)}</button>`;
+  else if (s.doneZ != null) {
+    h += `<br>To print the rest, cut the model at <b>${mmText(s.doneZ)}</b> (the top of layer ${s.layer - 1}, the last whole one) and print the top part.`;
+    h += `<span class="rest">${api.historyPrintRest ? `<label>Cut at <input type="number" min="0.05" step="0.01" value="${(Math.round(s.doneZ * 100) / 100).toFixed(2)}" data-cutz aria-label="Height to cut at, mm"> mm</label> <button type="button" class="btn small primary" data-printrest title="Choose the project it was printed from: every object on that plate is cut at this height, closed flat and lowered onto the bed, in a new 3MF (your project isn’t changed). Then open it in Snapmaker Orca.">✂ Print the rest…</button>` : ''}<button type="button" class="btn small" data-copycut="${s.doneZ}" title="Copy ${mmText(s.doneZ)} to paste into Orca’s Cut tool yourself">📋 Copy ${mmText(s.doneZ)}</button></span>`;
+  }
   if (s.note) h += `<br><span class="muted">${esc(s.note)}</span>`;
   return h;
 }
@@ -2078,6 +2081,14 @@ async function findStops(h, gen) {   // one at a time (each reads a G-code from 
 function wireStop(el, h) {
   const c = el.querySelector('[data-copycut]');
   if (c) c.onclick = () => { navigator.clipboard.writeText(String(Math.round(Number(c.dataset.copycut) * 100) / 100)).then(() => toast('Copied. In Snapmaker Orca: select the model, press C (Cut), and paste it as the height.', 6000), () => toast('Couldn’t copy.', 3000)); };
+  const pr = el.querySelector('[data-printrest]');
+  if (pr) pr.onclick = async () => {
+    const j = h.jobs[Number(el.closest('.job').dataset.i)], z = Number(el.querySelector('[data-cutz]').value);
+    pr.disabled = true;
+    try { const r = await withBusy('rest', 'Cutting the models…', () => api.historyPrintRest({ jobId: j.id, z })); if (r) toast(`Saved ${r.file.split(/[\\/]/).pop()}.`, 6000); }
+    catch (e) { toast(cleanErr(e), 8000); }
+    finally { pr.disabled = false; }
+  };
   const r = el.querySelector('[data-stopretry]');
   if (r) r.onclick = () => { const j = h.jobs[Number(el.closest('.job').dataset.i)]; j.stop = null; el.innerHTML = stopHtml(null); findStops(h, stopGen); };
 }
