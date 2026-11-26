@@ -216,6 +216,8 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .pe-cursor { position: absolute; border: 2px solid #fff; outline: 1.5px solid #e63946; border-radius: 50%; pointer-events: none; }
 .pe-cursor.restore { outline-color: #2a9d8f; }
 .pe-sel { position: absolute; border: 2px dashed #1d4ed8; background: rgba(29,78,216,.08); pointer-events: none; }
+.pe-trim { position: absolute; border: 2px dashed rgba(29,78,216,.8); border-radius: 4px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(30,40,60,.10); }
+.pe-check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
 .pe-marks { position: absolute; inset: 0; pointer-events: none; }
 .pe-mark { position: absolute; border: 3px solid #e63946; border-radius: 6px; box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
 .pe-tools { display: flex; flex-direction: column; gap: 6px; }

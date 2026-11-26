@@ -2566,10 +2566,11 @@ const PHOTO_DATA = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/;
 function certEdit(e) {
   if (!e || typeof e !== 'object') return null;
   const out = {};
-  for (const [k, lo, hi] of [['exposure', -100, 100], ['contrast', -100, 100], ['saturation', -100, 100], ['warmth', -100, 100], ['hue', -180, 180], ['sharpen', 0, 100], ['tolerance', 1, 100], ['soften', 0, 20]]) {
+  for (const [k, lo, hi] of [['exposure', -100, 100], ['contrast', -100, 100], ['saturation', -100, 100], ['warmth', -100, 100], ['hue', -180, 180], ['sharpen', 0, 100], ['tolerance', 1, 100], ['soften', 0, 20], ['margin', 0, 25]]) {
     const v = Number(e[k]); if (Number.isFinite(v)) out[k] = Math.max(lo, Math.min(hi, v));
   }
   out.removeBg = e.removeBg === true;
+  out.trim = e.trim !== false;
   if (Array.isArray(e.box) && e.box.length === 4 && e.box.every(v => Number.isFinite(+v) && +v >= 0 && +v <= 1)) out.box = e.box.map(Number);
   out.bg = ['white', 'paper', 'soft'].includes(e.bg) ? e.bg : 'white';
   return out;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.43.1
+- Certificates: a cut-out is **trimmed to the model**, so it fills the photo frame instead of sitting in a sea of
+  empty space. On by default (**Trim the empty space around the model**), with **Space around it** to leave more or
+  less room; the preview shows what's kept with a dashed outline.
+
 ## 2.43.0
 - Certificates, **Remove the background**: a better automatic cut-out. The AI looks twice (the whole photo, then
   closer at your model for sharper edges), each time also at a mirror image of the photo, and loose specks and faint

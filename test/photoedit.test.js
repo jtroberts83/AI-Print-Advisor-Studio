@@ -58,3 +58,12 @@ test('photo touch up: a box cut-out is placed back in the photo; outside the box
   const e = PE.applyEdits(Float32Array.from([1, 1, 0]), Float32Array.from([1, 0, 1]), Float32Array.from([0, 0, 1]));
   assert.deepStrictEqual([...e], [0, 1, 1], 'erase, untouched, restore');
 });
+
+test('photo touch up: trimming keeps the model and a little space around it', () => {
+  const w = 100, h = 200, m = new Float32Array(w * h);
+  for (let y = 50; y < 150; y++) for (let x = 30; x < 70; x++) m[y * w + x] = 1;
+  const t = PE.trimRect(m, w, h, 5);   // 5% of the model's longest side (100 px) = 5 px each side
+  [0.25, 0.225, 0.75, 0.775].forEach((v, i) => assert.ok(Math.abs(t[i] - v) < 0.005, `side ${i}: ${t[i]}`));
+  assert.strictEqual(PE.trimRect(new Float32Array(w * h), w, h, 5), null, 'nothing kept: no trim');
+  assert.deepStrictEqual(PE.trimRect(m, w, h, 200), [0, 0, 1, 1], 'never outside the photo');
+});

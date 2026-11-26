@@ -7,7 +7,7 @@
 // photo's shape. The result keeps the photo's own pixels and makes the background transparent (a PNG), so the
 // certificate's own color shows behind the model, whichever template is picked.
 (function (root) {
-  const DEF = { exposure: 0, contrast: 0, saturation: 0, warmth: 0, hue: 0, sharpen: 0, removeBg: false, soften: 0 };
+  const DEF = { exposure: 0, contrast: 0, saturation: 0, warmth: 0, hue: 0, sharpen: 0, removeBg: false, soften: 0, trim: true, margin: 4 };
   const PREVIEW = 900, FINAL = 2400, AI = 1024;
 
   // ---------------------------------------------------------------- pixels
@@ -185,6 +185,15 @@
     for (let i = 0; i < keep.length; i++) if (near[i] < 0.02) close.m[i] = 0;
     return close;
   }
+  // the part of a cut-out to keep when trimming the empty space: the model plus margin% of its size on each side
+  // (fractions of the picture), or null
+  function trimRect(m, w, h, margin) {
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) { const o = y * w; for (let x = 0; x < w; x++) if (m[o + x] > 0.04) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+    if (x1 < 0) return null;
+    const pad = Math.max(x1 - x0, y1 - y0) * (margin / 100);
+    return [Math.max(0, (x0 - pad) / w), Math.max(0, (y0 - pad) / h), Math.min(1, (x1 + 1 + pad) / w), Math.min(1, (y1 + 1 + pad) / h)];
+  }
   // a copy of the mask with everything outside the box (fractions) removed
   function clip(mask, rect) {
     const { w, h } = mask, m = mask.m.slice();
@@ -227,7 +236,7 @@
       const box = document.createElement('div');
       box.className = 'pe-wrap';
       box.innerHTML = `<div class="pe" role="dialog" aria-modal="true" aria-label="Touch up the photo">
-        <div class="pe-view" style="--pe-paper:${esc(paperOk)}"><canvas width="${prev.w}" height="${prev.h}" aria-label="Preview"></canvas><div class="pe-busy" hidden></div><div class="pe-cursor" hidden></div><div class="pe-sel" hidden></div><div class="pe-marks"></div></div>
+        <div class="pe-view" style="--pe-paper:${esc(paperOk)}"><canvas width="${prev.w}" height="${prev.h}" aria-label="Preview"></canvas><div class="pe-busy" hidden></div><div class="pe-cursor" hidden></div><div class="pe-sel" hidden></div><div class="pe-marks"></div><div class="pe-trim" hidden></div></div>
         <div class="pe-side">
           <h2>Touch up the photo</h2>
           <div class="pe-row"><button class="btn primary" data-pe="auto" title="Sets the sliders from this photo’s brightness and colors. Adjust them after if you like.">✨ Auto-fix</button>
@@ -245,6 +254,8 @@
               <label class="pe-sl pe-brush" hidden><span>Brush size <output data-out="brush">${P.brush}</output></span><input type="range" data-k="brush" min="4" max="120" value="${P.brush}"></label>
               <div class="pe-row pe-claude" hidden><button class="btn" data-pe="claude" title="Claude looks at the photo, marks the real object (not reflections, shadows or the table), the AI cuts again inside it, and Claude checks the result. Uses your API key.">✨ Let Claude fix it</button><span class="muted small pe-cost"></span></div>
               <div class="pe-row"><button class="link" data-pe="undo" disabled title="Ctrl+Z">↶ Undo</button><button class="link" data-pe="again" title="Throw away the fixes and let the AI cut out the whole photo again">Start over</button></div>
+              <label class="pe-check"><input type="checkbox" data-k="trim" ${P.trim ? 'checked' : ''}> Trim the empty space around the model</label>
+              <label class="pe-sl pe-margin"><span>Space around it (%) <output data-out="margin">${P.margin}</output></span><input type="range" data-k="margin" min="0" max="25" value="${P.margin}"></label>
               <label class="pe-sl pe-soft"><span>Soften the edge <output data-out="soften">${P.soften}</output></span><input type="range" data-k="soften" min="0" max="10" value="${P.soften}"></label>
             </div>
             <p class="pe-warn small" hidden></p>
@@ -266,6 +277,7 @@
         for (const b of box.querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(b.dataset.tool === tool));
         const how = box.querySelector('.pe-how'); how.hidden = !tool; how.textContent = tool ? HOW[tool] : '';
         box.querySelector('.pe-brush').hidden = tool !== 'erase' && tool !== 'restore';
+        box.querySelector('.pe-margin').hidden = !P.trim;
         box.querySelector('[data-pe=undo]').disabled = !undo.length;
         box.querySelector('.pe-claude').hidden = !cl || !cl.hasKey || cl.tour;
         if (cl && cl.usd != null) box.querySelector('.pe-cost').textContent = `about ${Math.max(1, Math.round(cl.usd * 100 * 2))}¢ (two looks), with your API key`;
@@ -281,10 +293,20 @@
         cancelAnimationFrame(raf);
         raf = requestAnimationFrame(() => {
           g.clearRect(0, 0, prev.w, prev.h);
-          if (holding) { g.drawImage(img, 0, 0, prev.w, prev.h); return; }
-          g.putImageData(render(prev, P, maskFor(), null), 0, 0);
+          if (holding) { g.drawImage(img, 0, 0, prev.w, prev.h); trimBox.hidden = true; return; }
+          const m = maskFor();
+          g.putImageData(render(prev, P, m, null), 0, 0);
+          showTrim(m);
         });
       };
+      const trimBox = box.querySelector('.pe-trim');
+      function showTrim(m) {
+        const t = m && P.trim ? trimRect(m, prev.w, prev.h, P.margin) : null;
+        if (!t || (t[0] <= 0 && t[1] <= 0 && t[2] >= 1 && t[3] >= 1)) { trimBox.hidden = true; return; }
+        const r = cv.getBoundingClientRect(), vr = view.getBoundingClientRect();
+        Object.assign(trimBox.style, { left: `${r.left - vr.left + t[0] * r.width}px`, top: `${r.top - vr.top + t[1] * r.height}px`, width: `${(t[2] - t[0]) * r.width}px`, height: `${(t[3] - t[1]) * r.height}px` });
+        trimBox.hidden = false;
+      }
       const marks = box.querySelector('.pe-marks');
       const showMarks = (list) => {
         marks.innerHTML = '';
@@ -448,8 +470,14 @@
           const full = pixels(img, FINAL);
           let m = P.removeBg && grid ? maskAt(grid, full.w, full.h, P.soften) : null;
           if (m && edited) m = applyEdits(m, maskAt({ w: prev.w, h: prev.h, m: ew }, full.w, full.h, 0), maskAt({ w: prev.w, h: prev.h, m: ev }, full.w, full.h, 0));
-          const c = document.createElement('canvas'); c.width = full.w; c.height = full.h;
+          let c = document.createElement('canvas'); c.width = full.w; c.height = full.h;
           c.getContext('2d').putImageData(render(full, P, m, null), 0, 0);
+          const t = m && P.trim ? trimRect(m, full.w, full.h, P.margin) : null;
+          if (t) {   // keep just the model and a little space around it
+            const sx = Math.floor(t[0] * full.w), sy = Math.floor(t[1] * full.h), sw = Math.max(1, Math.ceil(t[2] * full.w) - sx), sh = Math.max(1, Math.ceil(t[3] * full.h) - sy);
+            const t2 = document.createElement('canvas'); t2.width = sw; t2.height = sh;
+            t2.getContext('2d').drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh); c = t2;
+          }
           const { brush, ...keep } = P;
           // a cut-out keeps its transparency (PNG); a plain photo stays a JPEG
           done({ dataUrl: m ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.92), params: keep });
@@ -466,7 +494,7 @@
     });
   }
 
-  const api = { open, autoFix, render, maskAt, tidy, placeMask, applyEdits, within, clip, union, DEF };
+  const api = { open, autoFix, render, maskAt, tidy, placeMask, applyEdits, within, clip, union, trimRect, DEF };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PhotoEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);
