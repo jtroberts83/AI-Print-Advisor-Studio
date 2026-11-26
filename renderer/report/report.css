@@ -104,6 +104,12 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .tpl.t-professional .dot { background: conic-gradient(#1e3a5f 0 50%, #5b8db8 0); }
 .tpl.t-kids .dot { background: conic-gradient(#ff4d6d 0 25%, #ffb703 0 50%, #06d6a0 0 75%, #118ab2 0); }
 .tpl.t-christmas .dot { background: conic-gradient(#b3001b 0 50%, #1f7a3a 0); }
+.tpl.t-mistletoe .dot { background: radial-gradient(circle at 50% 55%, #fbf8ef 0 22%, transparent 24%), conic-gradient(#2f6b30 0 50%, #4f8a3c 0); }
+.tpl.t-wintertree .dot { background: conic-gradient(#1f5e3a 0 50%, #a9c7e3 0); }
+.tpl.t-gingerbread .dot { background: conic-gradient(#a0582a 0 60%, #fff3e0 0 70%, #d62828 0); }
+.tpl.t-presents .dot { background: linear-gradient(90deg, transparent 42%, #ffd166 42% 58%, transparent 58%), #d62828; }
+.tpl.t-reindeer .dot { background: radial-gradient(circle at 50% 60%, #d62828 0 22%, transparent 24%), #8b5a2b; }
+.tpl.t-snowman .dot { background: radial-gradient(circle at 50% 50%, #fff 0 45%, transparent 47%), #7fb2dd; }
 .tpl.t-birthday .dot { background: conic-gradient(#ff006e 0 33%, #ffbe0b 0 66%, #3a86ff 0); }
 .tpl.t-rainbow .dot { background: conic-gradient(#e63946, #f4a261, #e9c46a, #2a9d8f, #457b9d, #9b5de5, #e63946); }
 .phonewait .pw { width: 56px; height: 56px; padding: 0; border: 2px solid var(--line); border-radius: 8px; overflow: hidden; cursor: pointer; background: #f4f6f9; }
@@ -182,6 +188,32 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .cert.t-christmas .paper { border: 10px solid transparent; outline: 0; border-image: repeating-linear-gradient(45deg, #b3001b 0 14px, #fff 14px 28px, #1f7a3a 28px 42px, #fff 42px 56px) 10; }
 .cert.t-christmas .chead .kicker { color: #1f7a3a; }
 .cert.t-christmas .cphoto { box-shadow: 0 0 0 3px #c9a227, 0 6px 18px rgba(0,0,0,.18); }
+.cert.t-mistletoe { --c-bg: #fffdf7; --c-ink: #22261f; --c-1: #2f5d32; --c-2: #b3122e; --c-gold: #c9a227; --c-seal: #2f6b30; --c-soft: #f1f6ee;
+  --f-title: "Palatino Linotype", Georgia, serif; background: radial-gradient(circle at 50% 45%, #fffdf7 55%, #eef3e6); }
+.cert.t-mistletoe .paper { border: 3px solid #2f6b30; outline: 1.5px solid #c9a227; outline-offset: -8px; border-radius: 6px; }
+.cert.t-mistletoe .chead .kicker { color: #b3122e; }
+.cert.t-mistletoe .cphoto { box-shadow: 0 0 0 3px #c9a227, 0 6px 18px rgba(0,0,0,.16); }
+.cert.t-wintertree { --c-bg: #f7fbff; --c-ink: #1b2a3a; --c-1: #1f5e3a; --c-2: #3a6ea5; --c-gold: #e0b43c; --c-seal: #1f5e3a; --c-soft: #e9f2fb;
+  --f-title: "Palatino Linotype", Georgia, serif; background: linear-gradient(180deg, #eaf3fc, #ffffff 45%, #eef5fc); }
+.cert.t-wintertree .paper { border: 4px solid #a9c7e3; outline: 1.5px solid #1f5e3a; outline-offset: -9px; border-radius: 10px; }
+.cert.t-wintertree .cphoto { box-shadow: 0 0 0 3px #a9c7e3, 0 6px 18px rgba(0,0,0,.14); }
+.cert.t-gingerbread { --c-bg: #fff8ef; --c-ink: #3b2416; --c-1: #7a3d16; --c-2: #c1121f; --c-gold: #e9c46a; --c-seal: #a0582a; --c-soft: #fbeedd;
+  --f-title: "Segoe Print", "Comic Sans MS", cursive; --f-body: "Segoe UI", system-ui, sans-serif; background: radial-gradient(circle at 50% 45%, #fffaf3 50%, #f6e2c8); }
+.cert.t-gingerbread .paper { border: 9px solid #a0582a; outline: 2.5px dashed #fff; outline-offset: -6px; border-radius: 18px; }
+.cert.t-gingerbread .cphoto { border-radius: 16px; box-shadow: 0 0 0 4px #a0582a, 0 6px 18px rgba(0,0,0,.15); }
+.cert.t-gingerbread .cname { border-bottom: 3px dotted #c1121f; }
+.cert.t-presents { --c-bg: #fffdfa; --c-ink: #25201d; --c-1: #b3001b; --c-2: #1f7a3a; --c-gold: #c9a227; --c-seal: #b3001b; --c-soft: #fdf1f1;
+  --f-title: "Palatino Linotype", Georgia, serif; background: radial-gradient(circle at 50% 45%, #fffdfa 55%, #f7efe6); }
+.cert.t-presents .paper { border: 12px solid transparent; outline: 0; border-image: repeating-linear-gradient(135deg, #d62828 0 12px, #fff 12px 16px, #1f7a3a 16px 28px, #fff 28px 32px) 12; }
+.cert.t-presents .cphoto { box-shadow: 0 0 0 3px #c9a227, 0 6px 18px rgba(0,0,0,.18); }
+.cert.t-reindeer { --c-bg: #fffcf6; --c-ink: #2a1f17; --c-1: #6b3a1f; --c-2: #b3001b; --c-gold: #c9a227; --c-seal: #b3001b; --c-soft: #f7efe4;
+  --f-title: "Palatino Linotype", Georgia, serif; background: radial-gradient(circle at 50% 45%, #fffcf6 55%, #f2e6d4); }
+.cert.t-reindeer .paper { border: 6px double #6b3a1f; outline: 1.5px solid #b3001b; outline-offset: -11px; }
+.cert.t-reindeer .cphoto { box-shadow: 0 0 0 3px #8b5a2b, 0 6px 18px rgba(0,0,0,.16); }
+.cert.t-snowman { --c-bg: #f8fcff; --c-ink: #1b2a3a; --c-1: #1d4e89; --c-2: #d62828; --c-gold: #7fb2dd; --c-seal: #1d4e89; --c-soft: #e8f2fb;
+  --f-title: "Segoe Print", "Comic Sans MS", cursive; --f-body: "Segoe UI", system-ui, sans-serif; background: linear-gradient(180deg, #ffffff 55%, #e6f0fa); }
+.cert.t-snowman .paper { border: 5px solid #bcd4ea; outline: 2px dotted #7fb2dd; outline-offset: 5px; border-radius: 20px; }
+.cert.t-snowman .cphoto { border-radius: 18px; box-shadow: 0 0 0 3px #7fb2dd, 0 6px 18px rgba(0,0,0,.14); }
 .cert.t-birthday { --c-bg: #fffafd; --c-ink: #2b2140; --c-1: #c9184a; --c-2: #3a86ff; --c-gold: #ffbe0b; --c-seal: #8338ec; --c-soft: #fff0f6;
   --f-title: "Segoe Print", "Segoe Script", cursive; --f-name: "Segoe Script", "Segoe Print", cursive; --f-body: "Segoe UI", system-ui, sans-serif;
   background: radial-gradient(circle at 50% 40%, #fff 50%, #ffe9f3); }

@@ -262,6 +262,18 @@
       born: 'was born at the 3D printer on', to: 'Best friend', from: 'Made with love by', seal: ['BRAND', 'NEW TOY'], ring: 'PLAY · IMAGINE · HAVE FUN · BE KIND · ' },
     christmas: { label: 'Christmas gift', kicker: 'Made in the holiday workshop', title: 'Certificate of Christmas Magic', intro: 'This certifies that',
       born: 'was crafted with holiday cheer and finished on', to: 'To', from: 'From', seal: ['MERRY', 'CHRISTMAS'], ring: 'SEASON’S GREETINGS · JOY · PEACE · LOVE · ' },
+    mistletoe: { label: 'Mistletoe', kicker: 'Hung with love this holiday season', title: 'A Mistletoe Keepsake', intro: 'With a little holiday magic,',
+      born: 'was made under the mistletoe and finished on', to: 'To', from: 'With love from', seal: ['WITH', 'LOVE'], ring: 'MISTLETOE · MERRY · BRIGHT · LOVE · ' },
+    wintertree: { label: 'Winter tree', kicker: 'From a snowy winter workshop', title: 'Certificate of Winter Wonder', intro: 'Beneath the twinkling tree,',
+      born: 'arrived like the first snow on', to: 'To', from: 'From', seal: ['WINTER', 'WONDER'], ring: 'LET IT SNOW · PEACE · JOY · WONDER · ' },
+    gingerbread: { label: 'Gingerbread', kicker: 'Fresh from the holiday bakery', title: 'Certificate of Sweetness', intro: 'Freshly baked, layer by layer:',
+      born: 'came out of the oven (well, the printer) on', to: 'For', from: 'Baked by', seal: ['FRESHLY', 'BAKED'], ring: 'SUGAR · SPICE · EVERYTHING NICE · ' },
+    presents: { label: 'Wrapped presents', kicker: 'Do not open until Christmas!', title: 'A Gift, Wrapped With Love', intro: 'Inside this present:',
+      born: 'was made and wrapped on', to: 'To', from: 'From', seal: ['SPECIAL', 'DELIVERY'], ring: 'HANDMADE · WRAPPED · GIVEN WITH LOVE · ' },
+    reindeer: { label: 'Reindeer', kicker: 'Approved by the North Pole', title: 'Official Reindeer Delivery', intro: 'Hitched to the sleigh and ready to fly:',
+      born: 'was cleared for takeoff on', to: 'Delivered to', from: 'Sent by', seal: ['NORTH', 'POLE'], ring: 'DASHER · DANCER · PRANCER · VIXEN · COMET · CUPID · ' },
+    snowman: { label: 'Snowman', kicker: 'Built with snowy cheer', title: 'Certificate of Snowy Cheer', intro: 'Rolled, stacked and printed:',
+      born: 'came to life on', to: 'To', from: 'From', seal: ['LET IT', 'SNOW'], ring: 'SNOWY · CHEERFUL · COCOA · COZY · ' },
     birthday: { label: 'Birthday gift', kicker: 'A one-of-a-kind gift, made just for you', title: 'Happy Birthday!', intro: 'Specially made for your special day:',
       born: 'came to life on', to: 'To', from: 'From', seal: ['HAPPY', 'BIRTHDAY'], ring: 'MAKE A WISH · CELEBRATE · MANY HAPPY RETURNS · ' },
     rainbow: { label: 'Rainbow', kicker: 'Officially 3D printed', title: 'Certificate of Awesomeness', intro: 'Behold!',
@@ -358,6 +370,40 @@
     return `<path d="${d}" stroke="${c}" stroke-width="${Math.max(1, r / 8).toFixed(1)}" stroke-linecap="round" fill="none"/>`; };
   const balloon = (x, y, r, c) => `<path d="M${x},${y + r * 1.25} q ${-r * 0.3},${r * 0.9} ${r * 0.1},${r * 1.9}" stroke="#7a7a7a" stroke-width="1.2" fill="none"/><ellipse cx="${x}" cy="${y}" rx="${r}" ry="${r * 1.2}" fill="${c}"/><path d="M${x - 4},${y + r * 1.2 + 6} l4,-7 l4,7z" fill="${c}"/><ellipse cx="${x - r * 0.35}" cy="${y - r * 0.45}" rx="${r * 0.18}" ry="${r * 0.3}" fill="#fff" opacity=".55"/>`;
   const holly = (x, y, s) => `<g transform="translate(${x},${y}) scale(${s})"><path d="M0,0 q18,-22 40,-6 q-8,6 -4,14 q-12,-2 -16,8 q-6,-10 -20,-16z" fill="#1f7a3a"/><path d="M0,0 q-22,-18 -40,2 q9,4 6,13 q12,-4 17,6 q4,-11 17,-21z" fill="#2e8b47"/><circle cx="-4" cy="4" r="6" fill="#c8102e"/><circle cx="6" cy="6" r="6" fill="#d7263d"/><circle cx="1" cy="-4" r="6" fill="#b30d26"/></g>`;
+  // holiday pieces (each drawn around 0,0 and placed with translate/scale)
+  const at = (x, y, s, body, rot = 0) => `<g transform="translate(${x},${y}) rotate(${rot}) scale(${s})">${body}</g>`;
+  const mistletoe = (x, y, s, rot = 0) => at(x, y, s, `
+    <path d="M0,0 L0,26 M0,26 L-16,52 M0,26 L16,52 M0,26 L0,58" stroke="#3d6b35" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+    ${[[-16, 52, -35], [16, 52, 35], [0, 58, 0], [-9, 38, -60], [9, 38, 60]].map(([lx, ly, a]) => `<ellipse cx="${lx}" cy="${ly + 8}" rx="6.5" ry="17" fill="${a % 2 ? '#4f8a3c' : '#2f6b30'}" transform="rotate(${a} ${lx} ${ly})"/>`).join('')}
+    ${[[-4, 30], [4, 31], [0, 24], [-7, 36], [7, 36]].map(([bx, by]) => `<circle cx="${bx}" cy="${by}" r="4.2" fill="#fbf8ef" stroke="#c9c2b0" stroke-width=".8"/>`).join('')}
+    <path d="M0,2 C-18,-14 -26,4 -4,4 Z M0,2 C18,-14 26,4 4,4 Z" fill="#c1121f"/><path d="M-2,4 L-10,22 M2,4 L10,22" stroke="#c1121f" stroke-width="3.2" stroke-linecap="round"/><circle cx="0" cy="3" r="4" fill="#9b0d1f"/>`, rot);
+  const pine = (x, y, s) => at(x, y, s, `
+    <rect x="-6" y="-14" width="12" height="16" fill="#6b4423"/>
+    ${[[0, -14, 46, 36], [0, -40, 38, 32], [0, -64, 28, 30]].map(([cx, by, w, h]) => `<path d="M${cx - w},${by} L${cx},${by - h - 14} L${cx + w},${by} Z" fill="#1f5e3a"/><path d="M${cx - w},${by} q${w / 2},-8 ${w},0 q${w / 2},-8 ${w},0" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>`).join('')}
+    ${[[-18, -26, '#d62828'], [14, -32, '#f4a261'], [-8, -54, '#ffd166'], [10, -76, '#d62828'], [24, -20, '#4cc9f0'], [-26, -18, '#ffd166']].map(([ox, oy, c]) => `<circle cx="${ox}" cy="${oy}" r="4" fill="${c}"/>`).join('')}
+    ${star(0, -110, 11, '#ffd166')}`);
+  const ginger = (x, y, s, rot = 0) => at(x, y, s, `
+    <circle cx="0" cy="-24" r="12" fill="#a0582a"/>
+    <path d="M-8,-14 L-25,-8 a5.5,5.5 0 0,0 3,10 L-9,-1 L-15,22 a5.5,5.5 0 0,0 10,3 L0,9 L5,25 a5.5,5.5 0 0,0 10,-3 L9,-1 L22,2 a5.5,5.5 0 0,0 3,-10 L8,-14 Z" fill="#a0582a"/>
+    <circle cx="-4" cy="-27" r="1.9" fill="#fff"/><circle cx="4" cy="-27" r="1.9" fill="#fff"/><path d="M-5,-20 q5,5 10,0" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <path d="M-23,-7 l3,7 M23,-7 l-3,7 M-14,18 l8,3 M14,18 l-8,3" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="0" cy="-6" r="2.6" fill="#d62828"/><circle cx="0" cy="2" r="2.6" fill="#2a9d8f"/>`, rot);
+  const gift = (x, y, s, box, rib, rot = 0) => at(x, y, s, `
+    <rect x="-26" y="-40" width="52" height="40" rx="2" fill="${box}"/><rect x="-30" y="-50" width="60" height="12" rx="2" fill="${box}" stroke="rgba(0,0,0,.12)"/>
+    <rect x="-5" y="-50" width="10" height="50" fill="${rib}"/><path d="M0,-50 C-26,-74 -34,-50 -4,-50 Z M0,-50 C26,-74 34,-50 4,-50 Z" fill="${rib}"/><circle cx="0" cy="-50" r="5" fill="${rib}" stroke="rgba(0,0,0,.15)"/>`, rot);
+  const reindeer = (x, y, s, flip = false) => at(x, y, s, `<g transform="scale(${flip ? -1 : 1},1)">
+    <path d="M-7,-22 C-10,-40 -22,-46 -30,-60 M-14,-36 L-30,-38 M-22,-46 L-24,-62 M7,-22 C10,-40 22,-46 30,-60 M14,-36 L30,-38 M22,-46 L24,-62" stroke="#6b4423" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+    <ellipse cx="-19" cy="-14" rx="9" ry="5" fill="#8b5a2b" transform="rotate(-25 -19 -14)"/><ellipse cx="19" cy="-14" rx="9" ry="5" fill="#8b5a2b" transform="rotate(25 19 -14)"/>
+    <ellipse cx="0" cy="0" rx="17" ry="23" fill="#8b5a2b"/><ellipse cx="0" cy="14" rx="12" ry="9" fill="#c49a6c"/>
+    <circle cx="-7" cy="-5" r="2.6" fill="#1b1b1b"/><circle cx="7" cy="-5" r="2.6" fill="#1b1b1b"/><circle cx="0" cy="10" r="6.5" fill="#d62828"/><circle cx="-2" cy="8" r="1.8" fill="#fff" opacity=".7"/>
+    <path d="M-15,22 q15,10 30,0 l0,7 q-15,10 -30,0 Z" fill="#1f7a3a"/><circle cx="0" cy="33" r="4.5" fill="#e9c46a" stroke="#b8891a"/></g>`);
+  const snowman = (x, y, s) => at(x, y, s, `
+    <path d="M-16,-56 L-40,-72 M-36,-69 l-4,-8 M16,-56 L40,-72 M36,-69 l4,-8" stroke="#6b4423" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="0" cy="-22" r="24" fill="#fff" stroke="#bcd4ea" stroke-width="2"/><circle cx="0" cy="-58" r="17" fill="#fff" stroke="#bcd4ea" stroke-width="2"/><circle cx="0" cy="-86" r="13" fill="#fff" stroke="#bcd4ea" stroke-width="2"/>
+    <rect x="-13" y="-75" width="26" height="7" rx="3" fill="#d62828"/><rect x="5" y="-72" width="7" height="18" rx="3" fill="#b5171f"/>
+    <rect x="-14" y="-100" width="28" height="4" fill="#222"/><rect x="-9" y="-118" width="18" height="18" fill="#222"/><rect x="-9" y="-104" width="18" height="4" fill="#d62828"/>
+    <circle cx="-4.5" cy="-89" r="1.8" fill="#222"/><circle cx="4.5" cy="-89" r="1.8" fill="#222"/><path d="M0,-85 L14,-83 L0,-81 Z" fill="#f77f00"/>
+    <circle cx="0" cy="-60" r="2" fill="#222"/><circle cx="0" cy="-50" r="2" fill="#222"/><circle cx="0" cy="-28" r="2.2" fill="#222"/>`);
   // decorations drawn over the frame, in a 1000 × 760 box
   function decoSvg(t, seed) {
     const R = rng(seed), W = 1000, H = 760; let g = '';
@@ -375,6 +421,31 @@
     } else if (t === 'christmas') {
       edges(34, (x, y) => flake(+x.toFixed(1), +y.toFixed(1), 8 + R() * 12, R() < 0.5 ? '#9cc7e6' : '#c9a227'));
       g += holly(70, 64, 1.3) + holly(W - 70, 64, 1.3) + holly(70, H - 60, 1.3) + holly(W - 70, H - 60, 1.3);
+    } else if (t === 'mistletoe') {
+      edges(28, (x, y) => star(x, y, 3 + R() * 5, R() < 0.6 ? '#c9a227' : '#e6d3a3', R()));
+      g += mistletoe(78, 28, 1.25, -12) + mistletoe(W - 78, 28, 1.25, 12) + mistletoe(W / 2, 4, 0.75);
+      g += mistletoe(66, H - 30, 0.85, 200) + mistletoe(W - 66, H - 30, 0.85, 160);
+    } else if (t === 'wintertree') {
+      edges(60, (x, y) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(1.5 + R() * 3.5).toFixed(1)}" fill="#fff" stroke="#a9c7e3" stroke-width=".8"/>`);
+      edges(16, (x, y) => flake(+x.toFixed(1), +y.toFixed(1), 7 + R() * 9, '#8fb8de'));
+      g += pine(62, H - 22, 0.95) + pine(122, H - 18, 0.62) + pine(W - 62, H - 22, 0.95) + pine(W - 122, H - 18, 0.62);
+      g += star(64, 64, 16, '#ffd166', 0.2) + star(W - 64, 64, 16, '#ffd166', -0.2);
+    } else if (t === 'gingerbread') {
+      const cols = ['#d62828', '#2a9d8f', '#ffd166', '#ffffff', '#f4a261'];
+      edges(40, (x, y) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(2.5 + R() * 4).toFixed(1)}" fill="${cols[Math.floor(R() * cols.length)]}" stroke="rgba(0,0,0,.12)" stroke-width=".6"/>`);
+      g += ginger(66, 74, 1.25, -10) + ginger(W - 66, 74, 1.25, 10) + ginger(58, H - 66, 1.15, 8) + ginger(W - 58, H - 66, 1.15, -8);
+    } else if (t === 'presents') {
+      const cols = ['#d62828', '#1f7a3a', '#c9a227', '#3a86ff'];
+      edges(36, (x, y) => `<path d="M${x.toFixed(1)},${y.toFixed(1)} q6,-8 12,0 t12,0" stroke="${cols[Math.floor(R() * cols.length)]}" stroke-width="2.4" fill="none" stroke-linecap="round" transform="rotate(${Math.round(R() * 180)} ${x.toFixed(1)} ${y.toFixed(1)})"/>`);
+      g += gift(56, 92, 1.05, '#d62828', '#ffd166', -8) + gift(W - 56, 92, 1.05, '#1f7a3a', '#f1f1f1', 8);
+      g += gift(52, H - 14, 1.1, '#3a86ff', '#ffd166') + gift(112, H - 14, 0.75, '#c9a227', '#d62828') + gift(W - 52, H - 14, 1.1, '#d62828', '#1f7a3a') + gift(W - 112, H - 14, 0.75, '#8338ec', '#ffd166');
+    } else if (t === 'reindeer') {
+      edges(30, (x, y) => (R() < 0.5 ? star(x, y, 4 + R() * 6, '#e9c46a', R()) : flake(+x.toFixed(1), +y.toFixed(1), 6 + R() * 7, '#b9cde0')));
+      g += reindeer(72, 120, 1.3) + reindeer(W - 72, 120, 1.3, true) + reindeer(64, H - 72, 1.05) + reindeer(W - 64, H - 72, 1.05, true);
+    } else if (t === 'snowman') {
+      edges(54, (x, y) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(1.5 + R() * 3.5).toFixed(1)}" fill="#fff" stroke="#a9c7e3" stroke-width=".8"/>`);
+      edges(14, (x, y) => flake(+x.toFixed(1), +y.toFixed(1), 7 + R() * 8, '#7fb2dd'));
+      g += snowman(64, H - 16, 0.9) + snowman(W - 64, H - 16, 0.9) + flake(64, 66, 24, '#7fb2dd') + flake(W - 64, 66, 24, '#7fb2dd');
     } else if (t === 'birthday') {
       const cols = ['#ff006e', '#fb5607', '#ffbe0b', '#3a86ff', '#8338ec', '#06d6a0'];
       edges(70, (x, y) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(5 + R() * 7).toFixed(1)}" height="${(3 + R() * 4).toFixed(1)}" rx="1.5" fill="${cols[Math.floor(R() * cols.length)]}" transform="rotate(${Math.round(R() * 180)} ${x.toFixed(1)} ${y.toFixed(1)})"/>`);

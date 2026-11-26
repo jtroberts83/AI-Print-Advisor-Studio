@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2.51.0
+- Certificates: six new holiday templates, each with its own drawings, colors, wording and seal: **Mistletoe**,
+  **Winter tree** (snowy Christmas trees), **Gingerbread** (gingerbread people), **Wrapped presents**, **Reindeer**
+  and **Snowman**. ✨ AI ideas match the theme too.
 - Certificates, **🔤 Fonts and sizes**: sizes are now in points (pt), as they print, with a slider and a box to type
   the size. Dragging a slider up never makes the text smaller any more (before, it could jump smaller, bigger and
   smaller again). When there isn't room for the size you pick, the text stops at the largest size that fits and the

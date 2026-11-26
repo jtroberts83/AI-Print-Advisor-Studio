@@ -2767,7 +2767,10 @@ Then suggest:
 - 6 sayings for the message: warm, witty or sweet, related to what the model is and to the occasion, each as long as saying_length in the details says (never longer than its limit). Longer sayings can greet the person it is for by name (the "to" detail) and may mention the occasion. No hashtags or emoji.
 Match the occasion and tone of the certificate template. Keep everything family-friendly. If the model is a known character, you may use the character's name. Use details you can see (colors, pose, size) to make it personal.`;
 const CERT_OCCASION = { fancy: 'an elegant keepsake', professional: 'a professional or business piece (tone: polished, light humor at most)', kids: 'a toy for a child (tone: playful, simple words)',
-  christmas: 'a Christmas gift', birthday: 'a birthday gift', rainbow: 'a fun, colorful gift' };
+  christmas: 'a Christmas gift', mistletoe: 'a Christmas gift with a mistletoe theme (tone: warm, loving, a little romantic or family love)',
+  wintertree: 'a Christmas gift with a snowy winter Christmas tree theme', gingerbread: 'a Christmas gift with a gingerbread / holiday baking theme (sweet puns welcome)',
+  presents: 'a Christmas present (wrapping, unwrapping, gift-giving)', reindeer: 'a Christmas gift with a reindeer and sleigh theme (North Pole, flying, delivery)',
+  snowman: 'a winter holiday gift with a snowman theme (snow, cocoa, cozy)', birthday: 'a birthday gift', rainbow: 'a fun, colorful gift' };
 const CERT_EST = { inTok: 4700, outTok: 1400 };
 // ✨ Let Claude fix it (Touch up photo → Remove the background): Claude can't draw a cut-out, but it can see what the
 // real object is. It gets the photo and the current cut-out (on bright green) and returns a box around the object
