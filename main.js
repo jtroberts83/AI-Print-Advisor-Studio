@@ -2664,6 +2664,7 @@ const Cut = () => (cutoutObj ||= new (require('./src/cutout').Cutout)(path.join(
 ipcMain.handle('cutout-status', () => Cut().status());
 ipcMain.handle('cutout-download', (e) => Cut().download((got, total) => { if (!e.sender.isDestroyed()) e.sender.send('cutout-progress', got, total); }));
 ipcMain.handle('cutout-run', (_e, rgba) => Cut().run(rgba));
+app.on('will-quit', () => { const s = cutoutObj && cutoutObj.session; if (s) { cutoutObj.session = null; s.release().catch(() => {}); } });   // free the AI model before exit
 ipcMain.handle('cert-ai-info', async () => {
   const cfg = await readConfig(), model = cfg.model || DEFAULT_MODEL;
   return { hasKey: !!(await getApiKey()), usd: Spend.costOf(model, { input_tokens: CERT_EST.inTok, output_tokens: CERT_EST.outTok }), tour: DEMO };
