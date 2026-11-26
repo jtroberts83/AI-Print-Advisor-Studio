@@ -54,7 +54,7 @@ async function fetchJobs(printers, limit = 60) {
           estimatedSeconds: md.estimated_time ? Math.round(md.estimated_time) : null,
           layerHeight: md.layer_height ?? null, filamentType: md.filament_type || null, filamentName: md.filament_name || null,
           grams: md.filament_weight_total ?? null, slicer: md.slicer ? `${md.slicer} ${md.slicer_version || ''}`.trim() : null,
-          objectHeight: md.object_height ?? null,
+          objectHeight: md.object_height ?? null, fileSize: md.size ?? null,
           // for the print report: each filament the print used, its color and amount, and the slicer's picture
           end: j.end_time ? new Date(j.end_time * 1000).toISOString() : null, layers: md.layer_count ?? null,
           filaments: filamentsOf(md), thumb: largestThumb(md.thumbnails),
@@ -72,9 +72,11 @@ const stem = (s) => String(s || '').split(/[\\/]/).pop().replace(/\.(gcode|3mf)$
 
 class PrintLog {
   constructor(dir) { this.file = path.join(dir, 'print-log.json'); this.data = { ratings: {}, runs: [] }; }
-  async load() { try { this.data = JSON.parse(await fs.readFile(this.file, 'utf8')); } catch {} this.data.ratings ||= {}; this.data.runs ||= []; this.data.diagnoses ||= {}; return this; }
+  async load() { try { this.data = JSON.parse(await fs.readFile(this.file, 'utf8')); } catch {} this.data.ratings ||= {}; this.data.runs ||= []; this.data.diagnoses ||= {}; this.data.stops ||= {}; return this; }
   async addDiagnosis(jobId, entry) { (this.data.diagnoses[jobId] ||= []).unshift({ ...entry, at: new Date().toISOString() }); this.data.diagnoses[jobId] = this.data.diagnoses[jobId].slice(0, 10); await this.save(); }
   async save() { await fs.mkdir(path.dirname(this.file), { recursive: true }); await fs.writeFile(this.file, JSON.stringify(this.data, null, 1)); }
+  // where a cancelled or failed print stopped (src/stoplayer.js): found once, kept
+  async setStop(jobId, stop) { this.data.stops[jobId] = { ...stop, at: new Date().toISOString() }; await this.save(); }
   async rate(jobId, rating, note) {
     if (!rating) delete this.data.ratings[jobId];
     else this.data.ratings[jobId] = { rating, note: note || '', at: new Date().toISOString() };
@@ -90,7 +92,7 @@ class PrintLog {
     return this.data.runs.find(r => r.stem && s && (s.includes(r.stem) || r.stem.includes(s))) || null;
   }
   decorate(jobs) {
-    return jobs.map(j => ({ ...j, rating: this.data.ratings[j.id] || null, run: this.runFor(j), diagnoses: this.data.diagnoses[j.id] || [] }));
+    return jobs.map(j => ({ ...j, rating: this.data.ratings[j.id] || null, stop: this.data.stops[j.id] || null, run: this.runFor(j), diagnoses: this.data.diagnoses[j.id] || [] }));
   }
 }
 

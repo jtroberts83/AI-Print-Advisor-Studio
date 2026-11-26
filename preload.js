@@ -158,6 +158,7 @@ contextBridge.exposeInMainWorld('advisor', {
   orcaReloaded: (file) => ipcRenderer.invoke('orca-reloaded', file),
   onOrcaFileChanged: (cb) => ipcRenderer.on('orca-file-changed', (_e, p) => cb(p)),
   historyRate: (args) => ipcRenderer.invoke('history-rate', args),
+  historyStop: (jobId) => ipcRenderer.invoke('history-stop', jobId),
   showInFolder: (p) => ipcRenderer.invoke('show-in-folder', p),
   sceneMyPhotos: () => ipcRenderer.invoke('scene-my-photos'),
   sceneMyPhoto: (id) => ipcRenderer.invoke('scene-my-photo', id),

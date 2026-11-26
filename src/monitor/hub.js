@@ -48,6 +48,8 @@ class MonitorHub extends EventEmitter {
     }
     this.emit('state');
   }
+  // where cancelled or failed prints stopped, as the printers reported it: [{ printer (its name), filename, layer, total, at }]
+  stops() { return [...this.watches.values()].flatMap((w) => w.stops().map((r) => ({ ...r, printer: w.cfg.name || w.id }))); }
   stop() { for (const w of this.watches.values()) w.stop(); this.watches.clear(); this.previews.stop(); }
   changed(id) {
     if (this.pending.has(id)) return;

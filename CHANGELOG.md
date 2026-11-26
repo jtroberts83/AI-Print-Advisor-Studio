@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.46.0
+- **Print history: where a cancelled or failed print stopped.** Each cancelled or failed print shows the layer it
+  stopped on (“Stopped on layer 788 of 1124, 126.24 mm high”) and the height to cut the model at to print just the
+  rest: the top of the last whole layer, with **📋 Copy** to paste it into Snapmaker Orca's Cut tool. When the Print
+  Monitor was watching, the layer is the one the printer reported. Otherwise it's worked out from the filament the
+  print used and its G-code on the printer (checked against running prints: within a few layers), read once and kept.
+  A G-code since deleted or replaced under the same name is said so, instead of giving a wrong layer.
+- Certificates: **change the colors** shown. Click a color to pick another, **×** to remove one the print didn't
+  really use, **+ Add** for a missing one; **Use the print's colors** goes back. Kept with the certificate.
+- Certificates: **nothing is cut off any more.** A long message wraps onto as many lines as it needs (it used to end
+  with “…”), and so do long names and To / From. If the page gets full, the type gets smaller and the photo narrower
+  until everything fits. The message box in the editor is several lines tall too.
+
 ## 2.45.1
 - Certificates, **Combine prints**: for a long project printed over weeks, the list now shows prints finished within a
   week of **any** print you've ticked (it grows as you tick pieces), and **Find a print by name** searches all the

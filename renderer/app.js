@@ -2049,7 +2049,40 @@ function filterHistory() {
 }
 $('historyStatus').onchange = filterHistory;
 $('historySearch').oninput = filterHistory;
+// where a cancelled or failed print stopped: the layer, and the height to cut the model at to print the rest
+const STOPPED = new Set(['cancelled', 'error', 'klippy_shutdown', 'klippy_disconnect', 'interrupted', 'server_exit']);
+const mmText = (z) => `${(Math.round(z * 100) / 100).toFixed(2)} mm`;
+function stopHtml(s) {
+  if (!s) return '<span class="muted">⏹ Finding the layer it stopped on…</span>';
+  if (s.error) return `<span class="muted">⏹ Couldn’t find the layer it stopped on: ${esc(s.error)}</span> <button type="button" class="link" data-stopretry>Try again</button>`;
+  if (s.none) return `<span class="muted">⏹ ${esc(s.none)}</span>`;
+  const about = s.exact ? '' : 'about ';
+  let h = `⏹ Stopped on ${about}layer <b>${s.layer}</b>${s.total ? ` of ${s.total}` : ''}${s.z != null ? ` (${about}${mmText(s.z)} high)` : ''}`;
+  h += s.exact ? ' <span class="muted">as the printer reported it</span>' : ' <span class="muted" title="Worked out from the filament the print used and its G-code. It’s usually within a few layers: check the part before cutting.">worked out from the filament used ⓘ</span>';
+  if (s.layer <= 1) h += '<br><span class="muted">That’s the first layer: print the whole model again.</span>';
+  else if (s.doneZ != null) h += `<br>To print the rest: in Snapmaker Orca, cut the model at <b>${mmText(s.doneZ)}</b> (the top of layer ${s.layer - 1}, the last whole one) and print the top part. <button type="button" class="btn small" data-copycut="${s.doneZ}" title="Copy ${mmText(s.doneZ)} to paste into Orca’s Cut tool">📋 Copy ${mmText(s.doneZ)}</button>`;
+  if (s.note) h += `<br><span class="muted">${esc(s.note)}</span>`;
+  return h;
+}
+let stopGen = 0;
+async function findStops(h, gen) {   // one at a time (each reads a G-code from a printer), newest first
+  for (const el of $('historyBody').querySelectorAll('.job .stop')) {
+    if (gen !== stopGen) return;
+    const j = h.jobs[Number(el.closest('.job').dataset.i)];
+    if (j.stop) continue;
+    try { j.stop = await api.historyStop(j.id); } catch (e) { j.stop = { error: cleanErr(e) }; }
+    if (gen !== stopGen) return;
+    el.innerHTML = stopHtml(j.stop); wireStop(el, h);
+  }
+}
+function wireStop(el, h) {
+  const c = el.querySelector('[data-copycut]');
+  if (c) c.onclick = () => { navigator.clipboard.writeText(String(Math.round(Number(c.dataset.copycut) * 100) / 100)).then(() => toast('Copied. In Snapmaker Orca: select the model, press C (Cut), and paste it as the height.', 6000), () => toast('Couldn’t copy.', 3000)); };
+  const r = el.querySelector('[data-stopretry]');
+  if (r) r.onclick = () => { const j = h.jobs[Number(el.closest('.job').dataset.i)]; j.stop = null; el.innerHTML = stopHtml(null); findStops(h, stopGen); };
+}
 async function loadHistory() {
+  stopGen++;
   $('historyFilter').hidden = true;
   $('historyBody').innerHTML = '<p class="progress-line">Reading print history…</p>';
   try {
@@ -2068,6 +2101,7 @@ async function loadHistory() {
           ${j.status === 'completed' && api.reportOpen ? `<button class="btn cert-btn" data-certjob="${i}" title="A printable certificate for this print, like a birth certificate, to give with the model">🏅 Certificate…</button>` : ''}
           <button class="btn ts-btn" data-ts="${i}">Troubleshoot…</button>
         </div>
+        ${STOPPED.has(j.status) && api.historyStop ? `<div class="stop">${stopHtml(j.stop)}</div>` : ''}
         ${j.diagnoses && j.diagnoses[0] ? `<div class="diag">Diagnosis ${new Date(j.diagnoses[0].at).toLocaleDateString()}: ${esc(j.diagnoses[0].summary)}</div>` : ''}
       </div>`).join('');
     $('historyBody').querySelectorAll('.job').forEach(el => {
@@ -2079,7 +2113,9 @@ async function loadHistory() {
       el.querySelector('[data-ts]').onclick = () => openTroubleshooter(j);
       const cb = el.querySelector('[data-certjob]'); if (cb) cb.onclick = () => api.reportOpen(j.id);
     });
+    $('historyBody').querySelectorAll('.job .stop').forEach((el) => wireStop(el, h));
     $('historyFilter').hidden = false; filterHistory();
+    if (api.historyStop) findStops(h, stopGen);
   } catch (e) { $('historyBody').innerHTML = `<p class="error">${esc(cleanErr(e))}</p>`; }
 }
 

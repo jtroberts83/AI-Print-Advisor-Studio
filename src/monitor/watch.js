@@ -52,6 +52,7 @@ class PrinterWatch extends EventEmitter {
     this.meta = {}; this.totals = {};
     this.previewTs = 0; this.previewRunning = false; this.previewModelKey = '';
     this.persistPath = path.join(dataDir, `state_${this.id}.json`);
+    this.stopsPath = path.join(dataDir, `stops_${this.id}.json`);
     this.job = this.loadJob();
     this.thumbFile = this.job.thumb_file || '';
     this.prevState = null;
@@ -198,6 +199,14 @@ class PrinterWatch extends EventEmitter {
       if (startedLive) await this.notify('start', `${name}: print started`, `Printing ${jobTitle(fname)}`);
     }
     if (fname && fname !== this.meta._filename && !this.metaLoading) this.loadMetadata(fname);
+    // the layer being printed, kept so a cancel or error can say where it stopped (the printer may clear it afterwards)
+    if (ACTIVE.has(st)) {
+      const info = ps.info || {}, cur = Number(info.current_layer) || 0;
+      if (cur > 0 && (cur !== job.last_layer || job.layer_file !== fname)) {
+        Object.assign(job, { last_layer: cur, total_layer: Number(info.total_layer) || null, layer_file: fname, last_filament: Math.round(Number(ps.filament_used) || 0) });
+        this.saveJob();
+      }
+    }
 
     // the 99 % photo, while the part is still on the bed
     const threshold = (Number(settings.snapshot_progress) || 99) / 100;
@@ -226,7 +235,8 @@ class PrinterWatch extends EventEmitter {
         this.log(`print monitor ${name}: print paused ${ours ? 'by this app (the user confirmed Pause)' : 'by something other than this app (the printer’s screen, another app or Home Assistant, a filament sensor…)'}`);
         await this.notify('paused', `${name}: print paused`, `${jobTitle(fname)}${ours ? '' : ' (not by this app)'}`);
       }
-      else if (st === 'error') await this.notify('error', `${name}: printer error`, ps.message || 'The print stopped with an error. Check the printer.', { priority: 'high' });
+      if ((st === 'error' || st === 'cancelled' || st === 'klippy_shutdown') && ACTIVE.has(prev)) this.recordStop(fname, st);
+      if (st === 'error') await this.notify('error', `${name}: printer error`, ps.message || 'The print stopped with an error. Check the printer.', { priority: 'high' });
       else if (st === 'cancelled') await this.notify('cancelled', `${name}: print cancelled`, jobTitle(fname));
       else if (st === 'complete') {
         job.ended_at = Date.now() / 1000; this.saveJob();
@@ -248,6 +258,18 @@ class PrinterWatch extends EventEmitter {
     }
     if (st !== 'complete' && job.ready_since && !ACTIVE.has(st)) job.ready_since = null;
   }
+  // where a cancelled or failed print stopped, for Print history (stops_<id>.json, the last 100)
+  recordStop(fname, status) {
+    const job = this.job;
+    if (!fname || job.layer_file !== fname || !job.last_layer) return;
+    const rec = { filename: fname, status, layer: job.last_layer, total: job.total_layer || null, filament_mm: job.last_filament || null, at: Math.round(Date.now() / 1000) };
+    try {
+      const list = this.stops();
+      list.unshift(rec);
+      fs.writeFileSync(this.stopsPath, JSON.stringify(list.slice(0, 100)));
+    } catch (e) { this.log(`print monitor: saving where the print stopped: ${e.message}`); }
+  }
+  stops() { try { const l = JSON.parse(fs.readFileSync(this.stopsPath, 'utf8')); return Array.isArray(l) ? l : []; } catch { return []; } }
   tempText(c) { return this.settings().units === 'C' ? `${Math.round(c)}°C` : `${Math.round(cToF(c))}°F`; }
 
   // ------------------------------------------------------------ emails like the Home Assistant automations

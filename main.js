@@ -2455,6 +2455,40 @@ ipcMain.handle('history-list', async () => { await S.ready;
   S.lastJobs = S.printLog.decorate(jobs);
   return { configured: true, jobs: S.lastJobs, errors };
 });
+// Where a cancelled or failed print stopped (the layer and its height), so the rest can be cut off and printed:
+// the layer the Print Monitor saw when it stopped (exact), or worked out from the filament it used and its G-code.
+// Read-only (GET of the G-code); kept once found.
+const STOPPED = new Set(['cancelled', 'error', 'klippy_shutdown', 'klippy_disconnect', 'interrupted', 'server_exit']);
+const stopRuns = new Map();
+ipcMain.handle('history-stop', async (_e, jobId) => { await S.ready;
+  const j = (S.lastJobs || []).find((x) => x.id === jobId);
+  if (!j) throw new Error('That print is no longer in the list. Refresh Print history.');
+  if (S.printLog.data.stops[jobId]) return S.printLog.data.stops[jobId];
+  if (!STOPPED.has(j.status)) throw new Error('Only cancelled or failed prints stop part way.');
+  if (stopRuns.has(jobId)) return stopRuns.get(jobId);
+  const run = (async () => {
+    const endS = j.end ? Date.parse(j.end) / 1000 : null;
+    const seen = Monitor.stops().find((r) => r.printer === j.printer && r.filename === j.filename && endS && Math.abs(r.at - endS) < 1800);
+    if (!seen && !(j.filamentMm > 0)) return { none: 'The printer didn’t record how far this print got.' };
+    const printer = (await getPrinters()).find((p) => p.name === j.printer && p.url);
+    let found = null, note = null, gone = false;
+    if (printer && !FAKE_PRINTER) {
+      const url = `${String(printer.url).trim().replace(/\/+$/, '').replace(/^(?!https?:\/\/)/, 'http://')}/server/files/gcodes/${String(j.filename).split('/').map(encodeURIComponent).join('/')}`;
+      try { found = await require('./src/stoplayer').findStop({ url, apiKey: printer.apiKey, filamentMm: j.filamentMm, untilLayer: seen ? seen.layer : 0, size: j.fileSize }); }
+      catch (e) { note = e.code === 'gone' ? 'The G-code is no longer on the printer, so the layer can’t be worked out.' : e.code === 'changed' ? 'The G-code on the printer has been replaced since this print (same name, different file), so the layer can’t be worked out.' : `Couldn’t read the G-code: ${e.message}`; gone = e.code === 'gone' || e.code === 'changed'; }
+    }
+    let out;
+    if (seen) out = { layer: seen.layer, total: seen.total || (found && found.total) || j.layers || null, exact: true,
+      z: found && found.layer === seen.layer ? found.z : null, doneZ: found && found.layer === seen.layer ? found.doneZ : null, layerHeight: found ? found.layerHeight : null };
+    else if (found && found.layer > 0) out = { layer: found.layer, total: found.total || j.layers || null, exact: false, z: found.z, doneZ: found.doneZ, layerHeight: found.layerHeight };
+    else { const none = { none: note || 'Couldn’t work out the layer.' }; if (gone) await S.printLog.setStop(jobId, none); return none; }
+    if (note) out.note = note;
+    if (out.z != null || gone) await S.printLog.setStop(jobId, out);   // a missing height may come back if the printer was just off
+    return out;
+  })().finally(() => stopRuns.delete(jobId));
+  stopRuns.set(jobId, run);
+  return run;
+});
 ipcMain.handle('history-rate', async (_e, { jobId, rating, note }) => { await S.ready; await S.printLog.rate(jobId, rating, note); return true; });
 
 
@@ -2623,6 +2657,8 @@ ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original, mask) => {
   const clean = { name: certText(f.name, 80), to: certText(f.to, 80), from: certText(f.from, 80), message: certText(f.message, 240), weight: certText(f.weight, 30),
     template: certText(f.template, 20), edit: certEdit(f.edit),
     combine: Array.isArray(f.combine) ? f.combine.filter(s => typeof s === 'string' && s.length < 200).slice(0, 40) : [] };
+  // the colors shown, when changed on the certificate (left out: the print's own)
+  if (Array.isArray(f.colors)) clean.colors = f.colors.filter(c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)).map(c => c.toLowerCase()).slice(0, 16);
   await fs.writeFile(path.join(certDir(), k + '.json'), JSON.stringify(clean));
   const store = async (base, pic) => {
     for (const ext of ['jpg', 'png', 'webp']) await fs.unlink(path.join(certDir(), `${base}.${ext}`)).catch(() => {});

@@ -329,6 +329,9 @@ table.ctable { width: 100%; border-collapse: collapse; font-size: 12.5px; font-v
 .job { border-top: 1px solid var(--line); padding: 10px 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; }
 .job .f { font-weight: 600; font-size: 14px; word-break: break-word; }
 .job .m { font-size: 12px; color: var(--muted); grid-column: 1 / -1; }
+.job .stop { font-size: 12.5px; grid-column: 1 / -1; line-height: 1.6; }
+.job .stop .muted { color: var(--muted); }
+.job .stop .btn.small { padding: 1px 8px; font-size: 12px; margin-left: 4px; }
 .job .st { font-size: 12px; padding: 1px 7px; border-radius: 3px; background: var(--line); align-self: start; }
 .job .st.completed { background: var(--ok); color: #fff; }
 .job .st.cancelled { background: var(--warn); color: #fff; }

@@ -411,7 +411,7 @@
     const parts = partsOf(), multi = parts.length > 1;
     if (multi) return certHtmlMulti(parts);
     const gu = gramsUsed(j), m = metres(j) || plannedM(j);
-    const colors = (j.filaments || []).filter((x) => x.color);
+    const colors = certColors();
     const walls = sec('strength', 'wall_loops'), infill = sec('strength', 'sparse_infill_density'), pattern = sec('strength', 'sparse_infill_pattern');
     const stats = [
       ['Creation started', j.start ? `${shortDate(j.start)} · ${timeOnly(j.start)}` : ''],
@@ -442,7 +442,7 @@
     const lh = [...new Set(parts.map((x) => Number(x.layerHeight)).filter((v) => v > 0))].sort((a, b) => a - b);
     const printers = [...new Set(parts.map((x) => x.printer).filter(Boolean))];
     const mats = [...new Set(parts.flatMap((x) => materials(x).split(' + ')).filter(Boolean))];
-    const seen = new Set(), colors = parts.flatMap((x) => x.filaments || []).filter((x) => x.color && !seen.has(x.color.toLowerCase()) && seen.add(x.color.toLowerCase()));
+    const colors = certColors();
     // strength only when every print used the same walls and infill (and all of them could be read)
     const str = parts.map((x) => strengthOf(x.id === j.id ? (C.detail || R.detail.get(x.id)) : R.detail.get(x.id)));
     const strength = str.every((s) => s && s === str[0]) ? str[0] : '';
@@ -461,6 +461,21 @@
       ['Strength', strength],
     ].filter(([, v]) => v);
     return certPage({ stats, m, colors, born: last || first, files: `${j.filename} + ${parts.length - 1} more` });
+  }
+  // the filament colors the print(s) used, each once
+  function autoColors() {
+    const seen = new Set();
+    return partsOf().flatMap((x) => x.filaments || []).map((x) => String(x.color || '').toLowerCase()).filter((c) => /^#[0-9a-f]{6}$/.test(c) && !seen.has(c) && seen.add(c));
+  }
+  // the colors on the certificate: the ones set here (changed, removed or added), or else the print's
+  function colorList() { return Array.isArray(C.fields.colors) ? C.fields.colors : autoColors(); }
+  function certColors() { return colorList().map((color) => ({ color })); }
+  function colorsHtml() {
+    const list = colorList(), own = Array.isArray(C.fields.colors);
+    return `<div class="row ccolors"><span class="lbl">Colors</span>
+      ${list.map((c, i) => `<span class="cedit"><input type="color" data-ci="${i}" value="${esc(c)}" title="Click to change this color" aria-label="Color ${i + 1}"><button type="button" class="cdel" data-cdel="${i}" title="Remove this color (one the print didn’t really use)" aria-label="Remove color ${i + 1}">×</button></span>`).join('')}
+      ${list.length < 16 ? '<button type="button" class="btn" id="cColAdd" title="Add a color">+ Add</button>' : ''}
+      ${own ? '<button type="button" class="link" id="cColReset">Use the print’s colors</button>' : '<span class="muted small">From the print. Click one to change it, × to remove it.</span>'}</div>`;
   }
   // "Snapmaker U1 #2", "Snapmaker U1 #1" → "Snapmaker U1 #1 & #2"
   function samePrefix(names) {
@@ -505,25 +520,35 @@
   function renderCert() {
     if (!C.job) return;
     $('cert').innerHTML = certHtml();
-    const cut = fitText();
-    const note = $('cMsgNote'); if (note) note.hidden = !cut;
+    fitText();
     fitCert();
   }
-  // a long name or message: smaller type until everything fits (the message last, never cut mid-line)
+  // Long names, messages, To / From: nothing is ever cut off. The text wraps onto more lines, and if the side
+  // still overflows, things get smaller step by step (the name, the message, the stats, then the photo gets
+  // narrower) until all of it fits.
   function fitText() {
-    const info = $('cert').querySelector('.cinfo'); if (!info) return;
-    const over = () => info.scrollHeight > info.clientHeight + 1;
-    const msg = info.querySelector('.cmsg'), name = info.querySelector('.cname');
-    for (let pt = 28; name && over() && pt >= 22; pt -= 2) name.style.fontSize = `${pt}pt`;
-    for (let pt = 12.5; msg && over() && pt >= 9; pt -= 0.5) msg.style.fontSize = `${pt}pt`;
-    // still too long: the message ends with … on the last whole line that fits
-    if (msg && over()) {
-      const lh = parseFloat(getComputedStyle(msg).lineHeight) || 16;
-      const lines = Math.max(1, Math.floor((msg.offsetHeight - (info.scrollHeight - info.clientHeight)) / lh));
-      Object.assign(msg.style, { display: '-webkit-box', webkitBoxOrient: 'vertical', webkitLineClamp: String(lines), overflow: 'hidden' });
-      return true;
+    const cert = $('cert').querySelector('.cert'); if (!cert) return;
+    const info = cert.querySelector('.cinfo'), body = cert.querySelector('.cbody');
+    if (info) {
+      const over = () => info.scrollHeight > info.clientHeight + 1;
+      const msg = info.querySelector('.cmsg'), name = info.querySelector('.cname'), stats = info.querySelector('.cstats'), fun = info.querySelector('.cfun');
+      const steps = [];
+      for (let pt = 28; pt >= 20; pt -= 2) steps.push(() => name && (name.style.fontSize = `${pt}pt`));
+      for (let pt = 12.5; pt >= 10; pt -= 0.5) steps.push(() => msg && (msg.style.fontSize = `${pt}pt`));
+      for (let pt = 9.2; pt >= 7.6; pt -= 0.4) steps.push(() => stats && (stats.style.fontSize = `${pt}pt`));
+      for (let w = 3.5; w >= 2.5; w -= 0.25) steps.push(() => body && (body.style.gridTemplateColumns = `${w}in 1fr`));
+      for (let pt = 9.5; pt >= 7; pt -= 0.5) steps.push(() => msg && (msg.style.fontSize = `${pt}pt`));
+      steps.push(() => fun && (fun.style.display = 'none'));   // the filament fun fact goes before anything you wrote
+      for (let pt = 18; pt >= 12; pt -= 2) steps.push(() => name && (name.style.fontSize = `${pt}pt`));
+      for (let pt = 7.2; pt >= 6; pt -= 0.4) steps.push(() => stats && (stats.style.fontSize = `${pt}pt`));
+      for (let pt = 6.5; pt >= 5; pt -= 0.5) steps.push(() => msg && (msg.style.fontSize = `${pt}pt`));
+      for (const s of steps) { if (!over()) break; s(); }
     }
-    return false;
+    // To / From: wrap onto two lines, smaller until it fits its box
+    for (const v of cert.querySelectorAll('.party .val')) {
+      const pt0 = parseFloat(getComputedStyle(v).fontSize) * 0.75;
+      for (let pt = pt0; pt >= 8 && (v.scrollWidth > v.clientWidth + 1 || v.scrollHeight > v.clientHeight + 1); pt -= 1) v.style.fontSize = `${pt}pt`;
+    }
   }
   function fitCert() {
     const el = $('cert').querySelector('.cert'); if (!el) return;
@@ -545,7 +570,7 @@
         <label class="grow">${esc(TEMPLATES[cur].to)} <input id="cTo" type="text" maxlength="80" value="${esc(f.to || '')}"></label>
         <label class="grow">${esc(TEMPLATES[cur].from)} <input id="cFrom" type="text" maxlength="80" value="${esc(f.from || '')}"></label>
       </div>
-      <div class="row"><label class="grow">Message (optional) <input id="cMsg" type="text" maxlength="240" placeholder="e.g. Merry Christmas! Made just for you." value="${esc(f.message || '')}"><small id="cMsgNote" class="warn" hidden>Too long to fit: it ends with “…”. Shorten it or the name.</small></label>
+      <div class="row"><label class="grow">Message (optional) <textarea id="cMsg" rows="2" maxlength="240" placeholder="e.g. Merry Christmas! Made just for you.">${esc(f.message || '')}</textarea></label>
         <label title="Weigh the finished model if you can (a kitchen scale works). Grams if you type just a number. Left empty, it isn’t on the certificate.">Weight (optional) <input id="cWeight" type="text" maxlength="30" size="10" placeholder="e.g. 142" value="${esc(f.weight || '')}"></label></div>
       <div class="row">
         <span class="lbl">Photo</span>
@@ -556,6 +581,7 @@
         ${C.original ? `<button class="link" id="cUndo">Undo touch up</button>` : ''}
         ${C.photo ? `<button class="link" id="cNoPhoto">Use the slicer picture instead</button>` : ''}
       </div>
+      ${colorsHtml()}
       ${(() => {
         const n = partsOf().length - 1;
         const hint = !n && looksMulti(C.job) ? '<span class="muted small">This looks like part of a bigger print (other prints have a similar name).</span>' : '';
@@ -722,6 +748,12 @@
       if (btn) btn.innerHTML = `🧩 ${n ? `Combined with ${n} other print${n > 1 ? 's' : ''}: change…` : 'Multi-plate print? Combine prints…'}`;
       return;
     }
+    if (t.dataset.ci != null) {   // a color changed: the controls stay as they are, so the color picker stays open
+      const list = [...colorList()]; list[Number(t.dataset.ci)] = t.value.toLowerCase(); f.colors = list;
+      saveFields(); renderCert();
+      if (!$('cColReset')) { const tmp = document.createElement('div'); tmp.innerHTML = colorsHtml(); const old = $('certControls').querySelector('.ccolors .muted'); if (old) old.replaceWith(tmp.querySelector('#cColReset')); }
+      return;
+    }
     if (t.id === 'cName') f.name = t.value; else if (t.id === 'cTo') f.to = t.value; else if (t.id === 'cFrom') f.from = t.value;
     else if (t.id === 'cMsg') f.message = t.value; else if (t.id === 'cWeight') f.weight = t.value; else return;
     saveFields(); renderCert();
@@ -739,6 +771,9 @@
     else if (b.id === 'cNoPhoto') { await setPhoto(null); }
     else if (b.id === 'cTouch') touchUp();
     else if (b.id === 'cUndo') undoTouchUp();
+    else if (b.dataset.cdel != null) { const list = [...colorList()]; list.splice(Number(b.dataset.cdel), 1); C.fields.colors = list; saveFields(); certControls(); renderCert(); }
+    else if (b.id === 'cColAdd') { C.fields.colors = [...colorList(), '#888888']; saveFields(); certControls(); renderCert(); const ins = $('certControls').querySelectorAll('[data-ci]'); const last = ins[ins.length - 1]; if (last) last.click(); }
+    else if (b.id === 'cColReset') { delete C.fields.colors; saveFields(); certControls(); renderCert(); }
     else if (b.id === 'cPlates') { C.platesOpen = !C.platesOpen; certControls(); }
     else if (b.id === 'cPlatesDone') { C.platesOpen = false; certControls(); }
     else if (b.id === 'cIdeas') { setIdeasShut(false); askIdeas(); }
