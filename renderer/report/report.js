@@ -716,7 +716,7 @@
     }
     const prev = C.ideas || { names: [], sayings: [] };
     try {
-      const r = await api.giftIdeas(C.job.id, { photo, template: tplKey(C.fields.template), to: C.fields.to, from: C.fields.from, avoid: [...prev.names.map((n) => n.name), ...prev.sayings] });
+      const r = await api.giftIdeas(C.job.id, { photo, template: tplKey(C.fields.template), to: C.fields.to, from: C.fields.from, length: sayLen(), avoid: [...prev.names.map((n) => n.name), ...prev.sayings] });
       const seen = new Set(prev.names.map((n) => n.name.toLowerCase()));
       C.ideas = { what: r.what || prev.what, names: [...r.names.filter((n) => !seen.has(n.name.toLowerCase())), ...prev.names].slice(0, 24),
         sayings: [...r.sayings.filter((x) => !prev.sayings.includes(x)), ...prev.sayings].slice(0, 18), spent: (prev.spent || 0) + (r.usd || 0) };
@@ -727,11 +727,14 @@
   // the list of ideas can be folded away (remembered); new ideas open it again
   const ideasShut = () => { try { return localStorage.getItem('aipa.ideasShut') === '1'; } catch { return false; } };
   const setIdeasShut = (v) => { try { localStorage.setItem('aipa.ideasShut', v ? '1' : '0'); } catch {} };
+  // how long the AI's sayings are: short (one line), medium (two sentences), long (a card message); remembered
+  const sayLen = () => { try { const v = localStorage.getItem('aipa.sayLen'); return ['short', 'medium', 'long'].includes(v) ? v : 'short'; } catch { return 'short'; } };
   function ideasHtml() {
     const ai = C.ai || {}, i = C.ideas;
     const cost = ai.usd != null ? `about ${ai.usd < 0.01 ? '1' : Math.round(ai.usd * 100)}¢` : '';
     const btn = ai.tour ? '' : ai.hasKey
-      ? `<button class="btn" id="cIdeas" ${C.ideasBusy ? 'disabled' : ''} title="Claude looks at the model and suggests fun names and short sayings. Uses your API key.">${C.ideasBusy ? '<span class="spin"></span> Thinking up ideas…' : i ? '✨ More ideas' : '✨ AI ideas: fun names and sayings'}</button><span class="muted small">${cost}${cost ? ' each time, with your API key' : ''}</span>`
+      ? `<button class="btn" id="cIdeas" ${C.ideasBusy ? 'disabled' : ''} title="Claude looks at the model and suggests fun names and short sayings. Uses your API key.">${C.ideasBusy ? '<span class="spin"></span> Thinking up ideas…' : i ? '✨ More ideas' : '✨ AI ideas: fun names and sayings'}</button>
+        <label class="small saylen" title="How long the suggested sayings are">Sayings <select id="cSayLen">${[['short', 'Short (one line)'], ['medium', 'Medium (two sentences)'], ['long', 'Long (a card message)']].map(([v, t]) => `<option value="${v}" ${v === sayLen() ? 'selected' : ''}>${t}</option>`).join('')}</select></label><span class="muted small">${cost}${cost ? ' each time, with your API key' : ''}</span>`
       : '<span class="muted small">✨ AI name and saying ideas: add your Anthropic API key in Settings (main window) to use them.</span>';
     const shut = !!i && ideasShut();
     const fold = i ? `<button class="btn fold" id="cIdeasFold" aria-expanded="${!shut}" title="${shut ? 'Show' : 'Hide'} the names and sayings">${shut ? `▸ Show ideas (${i.names.length} names, ${i.sayings.length} sayings)` : '▾ Hide ideas'}</button>` : '';
@@ -829,6 +832,7 @@
   });
   $('certControls').addEventListener('change', async (e) => {
     const t = e.target;
+    if (t.id === 'cSayLen') { try { localStorage.setItem('aipa.sayLen', t.value); } catch {} return; }
     if (t.name === 'tpl') { C.fields.template = t.value; saveFields(); certControls(); renderCert(); }
     else if (t.dataset.ffam != null || t.dataset.fsize != null) certControls();   // let go of a slider / picked a font: "(changed)" and the reset link
     else if (t.id === 'cFile' && t.files[0]) { try { cstatus('Adding the photo…'); await setPhoto(await shrinkPhoto(t.files[0])); cstatus('✓ Photo added.'); } catch (err) { cstatus(err.message || String(err)); } }

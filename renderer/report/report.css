@@ -256,3 +256,5 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .frow select { font: inherit; padding: 4px 6px; border: 1px solid #c7ccd6; border-radius: 7px; background: #fff; }
 .frow output { font-variant-numeric: tabular-nums; font-size: 13px; text-align: right; }
 #cFonts.on { border-color: #7c6ce0; }
+.chip.say { max-width: 100%; white-space: normal; }
+.saylen select { font: inherit; padding: 3px 6px; border: 1px solid #c7ccd6; border-radius: 7px; background: #fff; margin-left: 4px; }

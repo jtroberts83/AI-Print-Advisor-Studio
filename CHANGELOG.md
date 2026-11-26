@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.50.0
+- Certificates, **✨ AI ideas**: choose how long the sayings are: **Short** (one line), **Medium** (two sentences)
+  or **Long** (a card message of three or four sentences, which can greet the person by name: “Every dragon needs a
+  best friend. Merry Christmas Harper, this one chose you. May it guard your shelf…”). The choice is remembered.
+
 ## 2.49.0
 - Certificates, **🔤 Fonts and sizes**: **To** and **From** now have their own font and size (they shared one before;
   a setting made in 2.48 applies to both until you change one). The panel names them as the template does
