@@ -1946,7 +1946,7 @@ function openAmazon() {
   if (shot) shot.urls.forEach(u => URL.revokeObjectURL(u));
   const y = new Date().getFullYear(), a = state.amazon || {};
   shot = { files:[], urls:[], busy:false, err:'', result:null,
-    amazon: { stores:[], domain: a.store || 'amazon.com', from: a.last ? +a.last.slice(0, 4) : y, to: y, onlyNew: !!a.last, phase:'setup', msg:'' } };
+    amazon: { stores:[], domain: a.store || 'amazon.com', from: a.last || `${y}-01-01`, to: today(), onlyNew: !!a.last, phase:'setup', msg:'' } };
   openFid = null;
   $('#overlay').classList.add('open');
   renderShot();
@@ -1955,8 +1955,6 @@ function openAmazon() {
 }
 function renderAmazon() {
   const A = shot.amazon, r = shot.result, y = new Date().getFullYear(), last = (state.amazon || {}).last;
-  const years = Array.from({ length: y - 2005 + 1 }, (_, i) => y - i);
-  const yopt = v => years.map(x => `<option ${x === v ? 'selected' : ''}>${x}</option>`).join('');
   const busy = A.phase === 'reading' || A.phase === 'claude';
   $('#modal').innerHTML = `<button class="x" data-close>×</button><div class="shot">
     <h2>Add filament from your Amazon orders</h2>
@@ -1965,9 +1963,10 @@ function renderAmazon() {
     ${hasKey ? '' : `<div class="mfr" style="margin-top:12px">Without an Anthropic API key the list has the product titles, prices and pictures, but you fill in each color yourself. With a key in the app's <a href="#" data-app-settings>Settings</a>, Claude reads each product (a few cents) and fills in brand, line, color and spools, including each color of a bundle.</div>`}
     <div class="amzform">
       <label>Amazon store <select class="sel" data-amz="domain" ${busy ? 'disabled' : ''}>${(A.stores.length ? A.stores : [{ domain: A.domain, name: A.domain }]).map(s => `<option value="${esc(s.domain)}" ${s.domain === A.domain ? 'selected' : ''}>${esc(s.name)} · ${esc(s.domain)}</option>`).join('')}</select></label>
-      <label>Orders from <select class="sel" data-amz="from" ${busy ? 'disabled' : ''}>${yopt(A.from)}</select></label>
-      <label>to <select class="sel" data-amz="to" ${busy ? 'disabled' : ''}>${yopt(A.to)}</select></label>
+      <label title="The day the first order you want was placed">Orders placed from <input type="date" class="sel" data-amz="from" value="${esc(A.onlyNew && last ? last : A.from)}" min="1995-01-01" max="${today()}" ${busy || (A.onlyNew && last) ? 'disabled' : ''}></label>
+      <label>to <input type="date" class="sel" data-amz="to" value="${esc(A.to)}" min="1995-01-01" max="${today()}" ${busy ? 'disabled' : ''}></label>
       ${last ? `<label><input type="checkbox" data-amz="onlyNew" ${A.onlyNew ? 'checked' : ''} ${busy ? 'disabled' : ''}> Only orders since my last import (${fmtDate(last)})</label>` : ''}
+      <span class="muted" style="font-size:12px;flex-basis:100%">A short range is quicker: the app skips orders outside these dates without opening them.</span>
     </div>
     <div class="actions" style="margin-top:4px;align-items:center">
       <button class="btn primary" data-amzgo ${busy ? 'disabled' : ''}>${busy ? '<span class="spin"></span> Working…' : r ? 'Read again' : 'Read my orders'}</button>
@@ -2001,7 +2000,8 @@ async function runAmazon() {
   A.phase = 'reading'; A.msg = 'Opening Amazon…'; mine.err = ''; mine.result = null; renderShot();
   const off = api.onAmazonProgress(m => { if (shot === mine && A.phase === 'reading') { A.msg = m.text || ''; renderShot(); } });
   try {
-    const got = await api.amazonImport({ domain: A.domain, from: Math.min(A.from, A.to), to: Math.max(A.from, A.to), since: A.onlyNew ? (state.amazon || {}).last : null });
+    const last = (state.amazon || {}).last;
+    const got = await api.amazonImport({ domain: A.domain, fromDate: A.onlyNew && last ? last : A.from, toDate: A.to });
     off();
     if (shot !== mine) return;
     if (!got.items.length) { A.phase = 'setup'; A.msg = got.cancelled ? 'Cancelled.' : `Read ${got.orders} order${got.orders === 1 ? '' : 's'}: no filament found.`; return renderShot(); }
@@ -2139,7 +2139,7 @@ $('#overlay').addEventListener('input', e => { if (shot) updateShotItem(e.target
 $('#overlay').addEventListener('change', e => {
   if (!shot) return;
   const a = e.target.dataset.amz;
-  if (a && shot.amazon) { shot.amazon[a] = e.target.type === 'checkbox' ? e.target.checked : a === 'domain' ? e.target.value : +e.target.value; return renderShot(); }
+  if (a && shot.amazon) { if (e.target.type === 'date' && !e.target.value) return renderShot(); shot.amazon[a] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; return renderShot(); }
   if (e.target.matches('[data-shotfile]')) { addShotFiles(e.target.files); renderShot(); }
   else updateShotItem(e.target);
 });

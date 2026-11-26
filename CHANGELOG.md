@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.55.0
+- Filament, **🛒 From Amazon**: choose the exact dates the orders were placed (day, month and year, from … to)
+  instead of whole years. Orders outside the dates are skipped without opening them, so a busy Amazon account with
+  many non-filament orders reads much faster.
+
 ## 2.54.0
 - Filament: new **🛒 From Amazon** adds the filament you bought on Amazon, from your order history. The app opens
   Amazon in its own window and you sign in there yourself: the app never sees or keeps your password, and it only

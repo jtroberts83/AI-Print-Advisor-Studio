@@ -1575,7 +1575,7 @@ async function amzWaitSignedIn(w) {
 }
 // read the order history: years to…from (newest first), stopping at orders before `since`; orders in `skip` aren't
 // opened again. Returns the filament order lines (with product pictures) and every order read ({ id: date }).
-async function amazonScan(s, { from, to, since, skip, background }, send) {
+async function amazonScan(s, { from, to, since, until, skip, background }, send) {
   const w = amzWindow();
   const items = [], read = {};
   let orders = 0, withFil = 0, cancelled = false;
@@ -1590,6 +1590,7 @@ async function amazonScan(s, { from, to, since, skip, background }, send) {
           const date = Amz.parseDate(card.head, s.domain) || Amz.parseDate(card.text, s.domain);
           read[card.id] = date; fresh++; orders++;
           if (since && date && date < since) break years;   // newest first: everything after this is older
+          if (until && date && date > until) continue;   // newer than the range asked for: not opened
           if (skip && skip.has(card.id)) continue;
           if (!card.items.some((i) => Amz.isFilament(i.title))) continue;
           await amzPause();
@@ -1644,14 +1645,20 @@ ipcMain.handle('amazon-import', async (e, opts = {}) => {
   if (AMZ.busy) throw new Error('Your Amazon orders are already being read.');
   const s = Amz.store(opts.domain);
   if (!s) throw new Error('Pick your Amazon store.');
-  const now = new Date().getFullYear();
-  const to = Math.min(now, Math.max(1995, opts.to | 0 || now)), from = Math.min(to, Math.max(1995, opts.from | 0 || to));
-  const since = /^\d{4}-\d{2}-\d{2}$/.test(opts.since || '') ? opts.since : null;
+  // the orders placed from…to (dates, YYYY-MM-DD); Amazon lists a year at a time, so the years around them are read
+  // and orders outside the dates are skipped (their details are never opened)
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : null);
+  const today = isoDay();
+  let until = day(opts.toDate) || today, since = day(opts.fromDate) || day(opts.since) || `${until.slice(0, 4)}-01-01`;
+  if (until > today) until = today;
+  if (since > until) [since, until] = [until, since];
+  if (since < '1995-01-01') since = '1995-01-01';
+  const from = +since.slice(0, 4), to = +until.slice(0, 4);
   const send = (m) => { if (!e.sender.isDestroyed()) e.sender.send('amazon-progress', m); };
   AMZ.busy = true; AMZ.cancel = false;
   try {
-    const r = await amazonScan(s, { from, to, since }, send);
-    return { items: r.items, orders: r.orders, cancelled: r.cancelled, store: s.domain, currency: s.cur, from, to, since };
+    const r = await amazonScan(s, { from, to, since, until }, send);
+    return { items: r.items, orders: r.orders, cancelled: r.cancelled, store: s.domain, currency: s.cur, since, until };
   } finally { AMZ.busy = false; }
 });
 // Claude reads order lines into inventory rows (the Filament screen's import; the daily check does the same here)

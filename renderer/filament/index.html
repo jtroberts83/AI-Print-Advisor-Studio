@@ -280,6 +280,10 @@ form.add input[type=color]{padding:2px;height:38px}
 .shot h2{margin:0 0 6px;padding-right:36px}
 .amzform{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin:14px 0 10px;font-size:14px}
 .amzform label{display:inline-flex;gap:6px;align-items:center}
+.amzform input[type=date]{font:inherit;padding:7px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);color-scheme:light dark}
+.amzform input[type=date]:disabled{opacity:.6}
+:root[data-theme="dark"] .amzform input[type=date]{color-scheme:dark}
+:root[data-theme="light"] .amzform input[type=date]{color-scheme:light}
 .amzbanner{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:8px 16px;padding:10px 14px;border-radius:10px;background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid var(--accent);font-size:14px}
 .amzorders{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--muted)}
 .drop{border:2px dashed var(--border);border-radius:12px;padding:26px;text-align:center;color:var(--muted);cursor:pointer;margin:14px 0 8px}
