@@ -2621,7 +2621,8 @@ ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original, mask) => {
   await fs.mkdir(certDir(), { recursive: true });
   const f = fields && typeof fields === 'object' ? fields : {};
   const clean = { name: certText(f.name, 80), to: certText(f.to, 80), from: certText(f.from, 80), message: certText(f.message, 240), weight: certText(f.weight, 30),
-    template: certText(f.template, 20), edit: certEdit(f.edit) };
+    template: certText(f.template, 20), edit: certEdit(f.edit),
+    combine: Array.isArray(f.combine) ? f.combine.filter(s => typeof s === 'string' && s.length < 200).slice(0, 40) : [] };
   await fs.writeFile(path.join(certDir(), k + '.json'), JSON.stringify(clean));
   const store = async (base, pic) => {
     for (const ext of ['jpg', 'png', 'webp']) await fs.unlink(path.join(certDir(), `${base}.${ext}`)).catch(() => {});

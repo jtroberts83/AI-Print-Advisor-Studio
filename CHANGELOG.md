@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.45.0
+- Certificates for a model printed in **several prints (plates)**: **🧩 Multi-plate print? Combine prints…** lists the
+  completed prints with a similar name first, then every other completed print finished within a week; tick the ones
+  that belong to the model. The certificate then shows the earliest start and latest finish, the printing time and
+  filament of all of them added up (“43 h 59 min across 4 prints”), every color, material and printer used, the
+  layers printed, the layer height (or its range), “Made from: 4 prints”, and the **tallest piece** (heights aren't
+  added: the pieces don't all stack). Strength is shown only when every print used the same walls and infill. When
+  other prints have a similar name (or the file is named “…_plate_2”), the certificate page points it out. The choice
+  is kept with the certificate.
+
 ## 2.44.0
 - Certificates: **Touch up photo** opens again where you left off: the cut-out (with your box, Erase/Restore and
   Claude fixes) is kept with the photo, so changing a slider later doesn't run the background remover again. **Start

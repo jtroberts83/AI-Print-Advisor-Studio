@@ -293,6 +293,51 @@
   const tplKey = (k) => (typeof k === 'string' && Object.prototype.hasOwnProperty.call(TEMPLATES, k) ? k : 'fancy');
   const C = { job: null, fields: {}, photo: null, camera: [], detail: null, openedAt: 0, qr: false, phone: [], saveT: 0 };
 
+  // ---- a model printed in several prints (plates): the other completed prints combined into one certificate
+  const GENERIC = new Set(['plate', 'plates', 'gcode', 'part', 'parts', 'print', 'final', 'copy', 'new', 'the', 'and', 'with', 'for', 'fixed', 'advisor', 'settings', 'test', 'redo']);
+  const words = (j) => nameOf(j).toLowerCase().replace(/_?plate_?\d+/g, ' ').split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !GENERIC.has(w) && !/^v?\d+$/.test(w));
+  const stemOf = (j) => nameOf(j).toLowerCase().replace(/[_\s-]*plate[_\s-]*\d+\s*$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const whenOf = (j) => Date.parse(j.end || j.start) || 0;
+  // prints that may belong with this one: named alike first, then everything else finished within a week
+  function plateCandidates(j) {
+    const ws = new Set(words(j)), st = stemOf(j), t = whenOf(j);
+    const others = R.jobs.filter((x) => x.id !== j.id && x.status === 'completed');
+    const close = (a, b) => Math.abs(whenOf(a) - t) - Math.abs(whenOf(b) - t);
+    const same = others.filter((x) => stemOf(x) === st || words(x).some((w) => ws.has(w))).sort(close);
+    const near = others.filter((x) => !same.includes(x) && Math.abs(whenOf(x) - t) <= 7 * 864e5).sort(close);
+    return { same, near };
+  }
+  // this print and the ones combined with it (completed ones still in the history read here)
+  function partsOf() {
+    const ids = Array.isArray(C.fields.combine) ? C.fields.combine : [];
+    return [C.job, ...ids.map((id) => R.jobs.find((x) => x.id === id)).filter((x) => x && x.id !== C.job.id && x.status === 'completed')];
+  }
+  const looksMulti = (j) => /_?plate_?\d+/i.test(j.filename || '') || plateCandidates(j).same.length > 0;
+  function strengthOf(d) {
+    if (!d || d.error) return null;
+    const sec = (id, key) => { const s = d.sections.find((x) => x.id === id); const i = s && s.items.find((x) => x.key === key); return i ? i.value : ''; };
+    const walls = sec('strength', 'wall_loops'), infill = sec('strength', 'sparse_infill_density'), pattern = sec('strength', 'sparse_infill_pattern');
+    return [walls && `${walls} walls`, infill && `${infill} ${String(pattern || '').toLowerCase()} infill`].filter(Boolean).join(' · ');
+  }
+  function loadDetails(list) {
+    for (const x of list) if (!R.detail.has(x.id)) {
+      R.detail.set(x.id, null);
+      api.reportDetail(x.id).then((d) => { R.detail.set(x.id, d); if (C.job) renderCert(); }).catch((e) => { R.detail.set(x.id, { error: e.message }); if (C.job) renderCert(); });
+    }
+  }
+  function platesHtml() {
+    const { same, near } = plateCandidates(C.job), on = new Set(Array.isArray(C.fields.combine) ? C.fields.combine : []);
+    const row = (x) => `<label class="plate"><input type="checkbox" data-plate="${esc(x.id)}" ${on.has(x.id) ? 'checked' : ''}>
+      ${thumbHtml(x, 'pth')}<span><b>${esc(nameOf(x))}</b><span class="muted small"> · ${esc(x.printer)} · finished ${esc(new Date(x.end || x.start).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · ${esc(hm(x.printSeconds))}${metres(x) ? ` · ${metres(x).toFixed(1)} m` : ''}</span></span></label>`;
+    for (const x of [...same, ...near.slice(0, 60)]) if (!R.thumbs.has(x.id)) { R.thumbs.set(x.id, null); api.reportThumb(x.id).then((t) => { R.thumbs.set(x.id, t); const im = $('certControls').querySelector(`[data-plate="${CSS.escape(x.id)}"] + .pth`); if (im && safeImg(t)) im.outerHTML = `<img class="pth" src="${esc(t)}" alt="">`; }).catch(() => {}); }
+    return `<div class="platebox">
+      <p class="small">Was this model printed in several prints (plates)? Tick the other prints that are part of it. Their printing time, filament, colors and materials are added to the certificate; the height shows the tallest piece (pieces don’t all stack).</p>
+      ${same.length ? `<h4>Prints named like “${esc(nameOf(C.job))}”</h4>${same.map(row).join('')}` : ''}
+      ${near.length ? `<h4>Other prints finished within a week of this one</h4>${near.slice(0, 60).map(row).join('')}` : ''}
+      ${same.length || near.length ? '' : '<p class="muted small">No other completed prints within a week of this one.</p>'}
+      <div class="row"><button class="btn primary" id="cPlatesDone">Done</button></div></div>`;
+  }
+
   // a stable pseudo-random sequence per print, so decorations don't jump around between renders
   function rng(seed) { let s = 0; for (const ch of String(seed)) s = (s * 31 + ch.charCodeAt(0)) >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
   const star = (x, y, r, fill, rot = 0) => { let d = ''; for (let i = 0; i < 10; i++) { const a = (Math.PI / 5) * i - Math.PI / 2 + rot, rr = i % 2 ? r * 0.45 : r; d += `${i ? 'L' : 'M'}${(x + rr * Math.cos(a)).toFixed(1)},${(y + rr * Math.sin(a)).toFixed(1)}`; } return `<path d="${d}Z" fill="${fill}"/>`; };
@@ -351,6 +396,8 @@
     const shortDate = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
     const timeOnly = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
     const done = !live(j) && j.end;
+    const parts = partsOf(), multi = parts.length > 1;
+    if (multi) return certHtmlMulti(parts);
     const gu = gramsUsed(j), m = metres(j) || plannedM(j);
     const colors = (j.filaments || []).filter((x) => x.color);
     const walls = sec('strength', 'wall_loops'), infill = sec('strength', 'sparse_infill_density'), pattern = sec('strength', 'sparse_infill_pattern');
@@ -367,6 +414,52 @@
       ['Material', materials(j)],
       ['Strength', [walls && `${walls} walls`, infill && `${infill} ${String(pattern || '').toLowerCase()} infill`].filter(Boolean).join(' · ')],
     ].filter(([, v]) => v);
+    return certPage({ stats, m, colors, born: done ? j.end : j.start, files: j.filename });
+  }
+  // a model made of several prints: times and filament added up, the tallest piece, everything used
+  function certHtmlMulti(parts) {
+    const j = C.job, f = C.fields;
+    const starts = parts.map((x) => x.start).filter(Boolean).sort(), ends = parts.map((x) => x.end).filter(Boolean).sort();
+    const first = starts[0], last = ends[ends.length - 1];
+    const shortDate = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    const timeOnly = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+    const secs = parts.reduce((t, x) => t + (x.printSeconds || 0), 0);
+    const m = parts.reduce((t, x) => t + (metres(x) || plannedM(x) || 0), 0), g = parts.reduce((t, x) => t + (gramsUsed(x) || plannedG(x) || 0), 0);
+    const tallest = Math.max(0, ...parts.map((x) => Number(x.objectHeight) || 0));
+    const layers = parts.reduce((t, x) => t + (Number(x.layers) || 0), 0);
+    const lh = [...new Set(parts.map((x) => Number(x.layerHeight)).filter((v) => v > 0))].sort((a, b) => a - b);
+    const printers = [...new Set(parts.map((x) => x.printer).filter(Boolean))];
+    const mats = [...new Set(parts.flatMap((x) => materials(x).split(' + ')).filter(Boolean))];
+    const seen = new Set(), colors = parts.flatMap((x) => x.filaments || []).filter((x) => x.color && !seen.has(x.color.toLowerCase()) && seen.add(x.color.toLowerCase()));
+    // strength only when every print used the same walls and infill (and all of them could be read)
+    const str = parts.map((x) => strengthOf(x.id === j.id ? (C.detail || R.detail.get(x.id)) : R.detail.get(x.id)));
+    const strength = str.every((s) => s && s === str[0]) ? str[0] : '';
+    const stats = [
+      ['Creation started', first ? `${shortDate(first)} · ${timeOnly(first)}` : ''],
+      ['Creation finished', last ? `${shortDate(last)} · ${timeOnly(last)}` : ''],
+      ['Time in the making', secs ? `${hm(secs)} across ${parts.length} prints` : ''],
+      [printers.length > 1 ? 'Birthplaces' : 'Birthplace', samePrefix(printers)],
+      ['Tallest piece', tallest ? `${tallest} mm (${(tallest / 25.4).toFixed(1)} in)` : ''],
+      ['Weight', weightText(f.weight)],
+      ['Made from', `${parts.length} prints (plates)`],
+      ['Layers printed', layers ? layers.toLocaleString() : ''],
+      ['Layer height', lh.length === 1 ? `${lh[0]} mm` : lh.length ? `${lh[0]}–${lh[lh.length - 1]} mm` : ''],
+      ['Filament', m ? `${m.toFixed(1)} m${g ? ` · ${kg(g)}` : ''}` : ''],
+      ['Material', mats.join(' + ')],
+      ['Strength', strength],
+    ].filter(([, v]) => v);
+    return certPage({ stats, m, colors, born: last || first, files: `${j.filename} + ${parts.length - 1} more` });
+  }
+  // "Snapmaker U1 #2", "Snapmaker U1 #1" → "Snapmaker U1 #1 & #2"
+  function samePrefix(names) {
+    const m = names.map((n) => /^(.*#)\s*(\d+)$/.exec(n));
+    if (names.length > 1 && m.every((x) => x && x[1] === m[0][1])) return m[0][1] + m.map((x) => +x[2]).sort((a, b) => a - b).join(' & #');
+    return names.join(' & ');
+  }
+  function certPage({ stats, m, colors, born, files }) {
+    const j = C.job, f = C.fields, t = tplKey(f.template), tp = TEMPLATES[t];
+    const name = (f.name || '').trim() || nameOf(j);
+    const dateOnly = (iso) => (iso ? new Date(iso).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : '');
     const no = `No. ${(j.start ? j.start.slice(0, 10).replace(/-/g, '') : '0')}-${(rng(j.id)() * 1e6 | 0).toString().padStart(6, '0')}`;
     const photo = [C.photo, R.thumbs.get(j.id)].find(safeImg) || null;
     // the frame takes the picture's own shape (no white bars): its width ÷ height, once the picture is measured
@@ -382,7 +475,7 @@
           <div class="cinfo">
             <div class="intro">${esc(tp.intro)}</div>
             <div class="cname">${esc(name)}</div>
-            <div class="born">${esc(tp.born)} <b>${esc(dateOnly(done ? j.end : j.start))}</b></div>
+            <div class="born">${esc(tp.born)} <b>${esc(dateOnly(born))}</b></div>
             <dl class="cstats">${stats.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
             ${m ? `<div class="cfun">${ruler}<span>Its filament laid end to end: ${esc(compare(m))}</span></div>` : ''}
             ${f.message ? `<div class="cmsg">“${esc(f.message)}”</div>` : ''}
@@ -393,7 +486,7 @@
           ${sealSvg(tp, year)}
           <div class="party"><div class="val">${esc(f.from || '')}</div><div class="lbl">${esc(tp.from)}</div></div>
         </footer>
-        <div class="cno">${esc(no)} · ${esc(j.filename)}</div>
+        <div class="cno">${esc(no)} · ${esc(files)}</div>
       </div></div>`;
   }
 
@@ -451,6 +544,12 @@
         ${C.original ? `<button class="link" id="cUndo">Undo touch up</button>` : ''}
         ${C.photo ? `<button class="link" id="cNoPhoto">Use the slicer picture instead</button>` : ''}
       </div>
+      ${(() => {
+        const n = partsOf().length - 1;
+        const hint = !n && looksMulti(C.job) ? '<span class="muted small">This looks like part of a bigger print (other prints have a similar name).</span>' : '';
+        return `<div class="row plates"><button class="btn${n ? ' on' : ''}" id="cPlates" aria-expanded="${!!C.platesOpen}" title="A model printed in several prints (plates): add their times, filament and colors together">🧩 ${n ? `Combined with ${n} other print${n > 1 ? 's' : ''}: change…` : 'Multi-plate print? Combine prints…'}</button>${hint}</div>
+        ${C.platesOpen ? platesHtml() : ''}`;
+      })()}
       ${ideasHtml()}
       ${waiting.length ? `<div class="row phonewait"><span class="muted small">From your phone (click to use):</span>${waiting.map((p) => `<button class="pw" data-pw="${esc(p.id)}" title="${esc(new Date(p.at).toLocaleString())} · ${esc(p.device)}"><img data-pthumb="${esc(p.id)}" alt="Phone photo"></button>`).join('')}</div>` : ''}
       <div id="cQr" class="qr ${C.qr ? '' : 'hidden'}"></div>
@@ -576,7 +675,7 @@
 
   async function openCert(jobId) {
     const j = R.jobs.find((x) => x.id === jobId); if (!j) return;
-    Object.assign(C, { job: j, fields: {}, photo: null, original: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false, ideas: ideasStore()[j.id] || null, ideasErr: '', ideasBusy: false });
+    Object.assign(C, { job: j, fields: {}, photo: null, original: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false, platesOpen: false, ideas: ideasStore()[j.id] || null, ideasErr: '', ideasBusy: false });
     try { const g = await api.certGet(j.id); C.fields = g.fields || {}; C.photo = g.photo; C.original = g.original || null; C.mask = g.mask || null; C.camera = g.camera || []; } catch (e) { status(String(e.message || e)); }
     if (!C.ai && api.certAiInfo) C.ai = await api.certAiInfo().catch(() => null);
     try { C.phone = await api.tsPhotosList(); } catch { C.phone = []; }
@@ -584,6 +683,7 @@
     $('certControls').hidden = false; $('cert').hidden = false;
     document.title = `Certificate · ${(C.fields.name || '').trim() || nameOf(j)}`;
     certControls(); renderCert(); scrollTo(0, 0);
+    loadDetails(partsOf().slice(1));
     if (!R.thumbs.has(j.id)) api.reportThumb(j.id).then((t) => { R.thumbs.set(j.id, t); if (C.job === j) renderCert(); }).catch(() => {});
     if (!C.detail) api.reportDetail(j.id).then((d) => { R.detail.set(j.id, d); if (C.job === j) { C.detail = d; renderCert(); } }).catch((e) => { C.detail = { error: e.message }; });
   }
@@ -596,6 +696,14 @@
   $('report').addEventListener('click', (e) => { const b = e.target.closest('[data-cert]'); if (b) openCert(b.dataset.cert); });
   $('certControls').addEventListener('input', (e) => {
     const t = e.target, f = C.fields;
+    if (t.dataset.plate) {   // a print ticked or unticked as part of this model
+      const set = new Set(Array.isArray(f.combine) ? f.combine : []);
+      if (t.checked) set.add(t.dataset.plate); else set.delete(t.dataset.plate);
+      f.combine = [...set]; saveFields(); loadDetails(partsOf()); renderCert();
+      const btn = $('cPlates'), n = partsOf().length - 1;
+      if (btn) btn.innerHTML = `🧩 ${n ? `Combined with ${n} other print${n > 1 ? 's' : ''}: change…` : 'Multi-plate print? Combine prints…'}`;
+      return;
+    }
     if (t.id === 'cName') f.name = t.value; else if (t.id === 'cTo') f.to = t.value; else if (t.id === 'cFrom') f.from = t.value;
     else if (t.id === 'cMsg') f.message = t.value; else if (t.id === 'cWeight') f.weight = t.value; else return;
     saveFields(); renderCert();
@@ -613,6 +721,8 @@
     else if (b.id === 'cNoPhoto') { await setPhoto(null); }
     else if (b.id === 'cTouch') touchUp();
     else if (b.id === 'cUndo') undoTouchUp();
+    else if (b.id === 'cPlates') { C.platesOpen = !C.platesOpen; certControls(); }
+    else if (b.id === 'cPlatesDone') { C.platesOpen = false; certControls(); }
     else if (b.id === 'cIdeas') { setIdeasShut(false); askIdeas(); }
     else if (b.id === 'cIdeasFold') { setIdeasShut(!ideasShut()); certControls(); }
     else if (b.dataset.name != null) { C.fields.name = b.dataset.name; $('cName').value = b.dataset.name; saveFields(); renderCert(); }
