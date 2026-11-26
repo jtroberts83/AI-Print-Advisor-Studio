@@ -1985,12 +1985,29 @@ function amazonHad(src) {
   return Object.values(state.spools).some(s => s.amz === key) || allFilaments().some(f => (f.sources || []).some(x => x.asin === src.asin && x.date === src.date));
 }
 // order lines + rows read from them (Claude's, or guessed from the titles) → review rows
+// Spools added from a screenshot or by hand carry no Amazon order, so they can't be matched exactly. A row is
+// "probably added already" when you have that filament (same brand, type and color) with spools that aren't from an
+// Amazon import, bought from 3 days before the order to 3 weeks after it (by hand, people often add spools when they
+// arrive). Each such spool counts for one row only.
+const dayNum = d => (/^\d{4}-\d{2}-\d{2}/.test(d || '') ? Math.round(Date.parse(String(d).slice(0, 10) + 'T12:00:00Z') / 864e5) : null);
+function probablyAdded(it, date, claimed) {
+  const od = dayNum(date);
+  if (od == null || !String(it.color || '').trim()) return 0;
+  const fids = new Set(allFilaments().filter(f => norm(f.brand) === norm(it.brand) && f.type === it.type && norm(f.color) === norm(it.color)).map(f => f.id));
+  if (!fids.size) return 0;
+  const near = Object.values(state.spools).filter(sp => fids.has(sp.fid) && !sp.amz && !sp.src && !claimed.has(sp.id)
+    && (() => { const b = dayNum(sp.bought); return b != null && b >= od - 3 && b <= od + 21; })());
+  near.slice(0, Math.max(1, +it.spools || 1)).forEach(sp => claimed.add(sp.id));
+  return near.length;
+}
 function amazonRows(lines, rows, storeDomain) {
+  const claimed = new Set();
   return rows.map(it => {
-    const s = lines[it.line_no], had = amazonHad(s);
-    return { ...it, src: s, on: !had, store: `Amazon (${String(storeDomain).replace(/^amazon\./, '')})`, order_date: s.date, status: s.ordered ? 'ordered' : 'new',
+    const s = lines[it.line_no], had = amazonHad(s), maybe = had ? 0 : probablyAdded(it, s.date, claimed);
+    return { ...it, src: s, on: !had && !maybe, store: `Amazon (${String(storeDomain).replace(/^amazon\./, '')})`, order_date: s.date, status: s.ordered ? 'ordered' : 'new',
       photo: s.photo, usePhoto: !!s.photo, amz: `${s.order}|${s.asin}`, asin: s.asin, url: s.url,
-      note: [had ? 'Already in your inventory (this order). Tick it to add it again.' : '', it.note].filter(Boolean).join(' ') };
+      note: [had ? 'Already in your inventory (this order). Tick it to add it again.'
+        : maybe ? `Probably added already (from a screenshot or by hand): you have ${maybe} spool${maybe === 1 ? '' : 's'} of it bought around ${fmtDate(s.date)}. Tick it to add it anyway.` : '', it.note].filter(Boolean).join(' ') };
   });
 }
 const knownLines = () => [...new Set([...Object.keys(typeof SPECS !== 'undefined' ? SPECS : {}).map(k => k.split('|').slice(0, 2).join(' | ')),

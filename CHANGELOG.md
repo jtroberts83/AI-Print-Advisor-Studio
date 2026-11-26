@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.56.0
+- Filament, **🛒 From Amazon** and the daily check: an order you already added from a screenshot or by hand is now
+  spotted too. When you have that filament (same brand, type and color) with spools bought from 3 days before the
+  order to 3 weeks after it, the row comes in unticked as **Probably added already**, with how many spools you have
+  from around then. Tick it to add it anyway. (Orders added with 🛒 From Amazon were already recognized exactly.)
+
 ## 2.55.0
 - Filament, **🛒 From Amazon**: choose the exact dates the orders were placed (day, month and year, from … to)
   instead of whole years. Orders outside the dates are skipped without opening them, so a busy Amazon account with
