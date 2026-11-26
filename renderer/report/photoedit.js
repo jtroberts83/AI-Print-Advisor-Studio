@@ -149,7 +149,7 @@
           ${SLIDERS.map(([k, label, lo, hi]) => `<label class="pe-sl"><span>${esc(label)} <output data-out="${k}">${P[k]}</output></span><input type="range" data-k="${k}" min="${lo}" max="${hi}" value="${P[k]}"></label>`).join('')}
           <fieldset class="pe-bg"><legend><label><input type="checkbox" data-k="removeBg" ${P.removeBg ? 'checked' : ''}> Remove the background</label></legend>
             <p class="muted small pe-what">An AI model on this PC finds your model in the photo and takes the background away; the certificate’s own color shows behind it.</p>
-            <div class="pe-dl" hidden><button class="btn" data-pe="download"></button><progress max="1" value="0" hidden></progress></div>
+            <div class="pe-dl" hidden><button class="btn primary" data-pe="download"></button><progress max="1" value="0" hidden></progress></div>
             <label class="pe-sl pe-soft"><span>Soften the edge <output data-out="soften">${P.soften}</output></span><input type="range" data-k="soften" min="0" max="10" value="${P.soften}"></label>
             <p class="pe-warn small" hidden></p>
           </fieldset>
@@ -184,7 +184,7 @@
         if (ai || aiBusy) return;
         if (!cutout) { say('Background removal isn’t available here.'); P.removeBg = false; sync(); return; }
         st = await cutout.status().catch(() => st);
-        if (!st || !st.ready) { say('Download the background remover first (once), then tick “Remove the background”.'); P.removeBg = false; sync(); return; }
+        if (!st || !st.ready) { say(st ? 'First, download the background remover with the button above (once). Your model is cut out right after.' : 'The background remover isn’t available right now.'); sync(); return; }
         aiBusy = true; busy.textContent = 'Finding your model in the photo… (a few seconds)'; busy.hidden = false; say('');
         try {
           ai = maskOf(await cutout.run(squeezed(img)));
@@ -218,7 +218,7 @@
           catch (err) { say(err.message || String(err)); st = await cutout.status().catch(() => st); }
           b.disabled = false; bar.hidden = true; sync();
         } else if (a === 'apply') {
-          if (P.removeBg && !ai) { say(aiBusy ? 'Still finding your model… one moment.' : 'Tick “Remove the background” again, or untick it.'); return; }
+          if (P.removeBg && !ai) { say(aiBusy ? 'Still finding your model… one moment.' : st && !st.ready ? 'Download the background remover first, or untick “Remove the background”.' : 'Untick “Remove the background”, or tick it again to try once more.'); return; }
           b.disabled = true; b.textContent = 'Making the photo…';
           await new Promise((r) => setTimeout(r, 30));
           const full = pixels(img, FINAL);

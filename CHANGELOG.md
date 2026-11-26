@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.42.1
+- Certificates: **Remove the background** could not be turned on the first time: the box unticked itself and the
+  button to download the background remover couldn't be clicked. Now the box stays ticked, a blue **⬇ Download the
+  background remover** button appears, and your model is cut out as soon as the download finishes.
+
 ## 2.42.0
 - Certificates: **Remove the background** is now done by an AI model on your PC (BiRefNet), so it cuts the model out
   cleanly, even fine leaves and lashes, where the old way left smudges and holes. The model downloads once (224 MB,
