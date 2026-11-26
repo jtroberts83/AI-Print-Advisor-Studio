@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld('advisor', {
   reportPdf: (o) => ipcRenderer.invoke('report-pdf', o),
   reportPrint: (o) => ipcRenderer.invoke('report-print', o),
   certGet: (jobId) => ipcRenderer.invoke('cert-get', jobId),
-  certSet: (jobId, fields, photo, original) => ipcRenderer.invoke('cert-set', jobId, fields, photo, original),
+  certSet: (jobId, fields, photo, original, mask) => ipcRenderer.invoke('cert-set', jobId, fields, photo, original, mask),
   certAiInfo: () => ipcRenderer.invoke('cert-ai-info'),
   giftIdeas: (jobId, o) => ipcRenderer.invoke('cert-ideas', jobId, o),
   certCameraPhoto: (jobId, id) => ipcRenderer.invoke('cert-camera-photo', jobId, id),

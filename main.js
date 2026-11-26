@@ -2603,8 +2603,8 @@ ipcMain.handle('cert-get', async (_e, jobId) => { await S.ready;
     }
     return null;
   };
-  const photo = await readPic(k), original = await readPic(`${k}-original`);
-  return { fields, photo, original, camera: FAKE_PRINTER ? [] : (await cameraPhotos(job)).map(c => ({ id: `${c.pid}/${c.file}`, taken: c.taken })) };
+  const photo = await readPic(k), original = await readPic(`${k}-original`), mask = await readPic(`${k}-mask`);
+  return { fields, photo, original, mask, camera: FAKE_PRINTER ? [] : (await cameraPhotos(job)).map(c => ({ id: `${c.pid}/${c.file}`, taken: c.taken })) };
 });
 ipcMain.handle('cert-camera-photo', async (_e, jobId, id) => { await S.ready;
   const job = reportJob(jobId); if (!job) return null;
@@ -2614,7 +2614,8 @@ ipcMain.handle('cert-camera-photo', async (_e, jobId, id) => { await S.ready;
 });
 // fields: { name, to, from, message, template, weight, edit }; photo: a data: URL (new photo), null (remove it) or undefined (keep);
 // original: the photo before Touch up (same values), so edits can be changed or undone later
-ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original) => { await S.ready;
+// mask: the cut-out (a gray PNG) from Touch up, so the next Touch up starts from it (same values as photo)
+ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original, mask) => { await S.ready;
   const job = reportJob(jobId); if (!job) throw new Error('Reload the report and try again.');
   const k = reportKey(job);
   await fs.mkdir(certDir(), { recursive: true });
@@ -2633,6 +2634,7 @@ ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original) => { await
   };
   if (photo !== undefined) await store(k, photo);
   if (original !== undefined) await store(`${k}-original`, original);
+  if (mask !== undefined) await store(`${k}-mask`, mask);
   return true;
 });
 
@@ -2763,9 +2765,28 @@ ipcMain.handle('report-pdf', async (e, { name, landscape } = {}) => {
   await fs.writeFile(r.filePath, pdf);
   return r.filePath;
 });
-ipcMain.handle('report-print', (e, o) => new Promise((resolve) => {
-  e.sender.print({ printBackground: true, landscape: !!(o && o.landscape) }, (ok, why) => resolve(ok ? true : (why === 'cancelled' ? null : why || false)));
-}));
+// 🖨 Print: Electron has no print preview (only Windows' plain print dialog), so the page is made into a PDF in the
+// background and opened in the PC's PDF viewer (usually Edge), which shows a real preview: Ctrl+P prints from there.
+// The last few are kept in the app's data folder (print), not in Documents.
+ipcMain.handle('report-print', async (e, o = {}) => {
+  const safe = String(o.name || 'Print report').replace(/[\/:*?"<>|]+/g, ' ').trim().slice(0, 120) || 'Print report';
+  const m = o.landscape ? 0.3 : 0.5;
+  const pdf = await e.sender.printToPDF({ pageSize: 'Letter', landscape: !!o.landscape, printBackground: true, margins: { marginType: 'custom', top: m, bottom: m, left: m, right: m } });
+  const dir = process.env.AIPA_TEST_SAVE_DIR || path.join(app.getPath('userData'), 'print');
+  await fs.mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${safe} (to print).pdf`);
+  await fs.writeFile(file, pdf);
+  if (!process.env.AIPA_TEST_SAVE_DIR) {   // keep the newest 8
+    try {
+      const all = (await fs.readdir(dir)).filter(n => n.endsWith('.pdf'));
+      const withTime = await Promise.all(all.map(async n => ({ n, t: (await fs.stat(path.join(dir, n))).mtimeMs })));
+      for (const old of withTime.sort((a, b) => b.t - a.t).slice(8)) await fs.unlink(path.join(dir, old.n)).catch(() => {});
+    } catch {}
+    const err = await shell.openPath(file);
+    if (err) return { file, error: err };
+  }
+  return { file };
+});
 
 ipcMain.handle('show-in-folder', (_e, p) => shell.showItemInFolder(p));
 

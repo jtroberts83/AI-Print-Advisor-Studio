@@ -219,7 +219,24 @@
 
   // cutout: { status(), download(onProgress), run(rgba) } from the window (the AI model runs in the app, not here).
   // paper: the certificate's color, shown behind the model in the preview.
-  function open({ src, params, paper = '#fffdf6', cutout = null }) {
+  // the cut-out as a gray PNG (white = the model), so reopening Touch up starts from it instead of asking the AI again
+  function maskUrl(mask) {
+    const c = document.createElement('canvas'); c.width = mask.w; c.height = mask.h;
+    const g = c.getContext('2d'), d = g.createImageData(mask.w, mask.h);
+    for (let i = 0, q = 0; i < mask.m.length; i++, q += 4) { const v = Math.round(Math.max(0, Math.min(1, mask.m[i])) * 255); d.data[q] = d.data[q + 1] = d.data[q + 2] = v; d.data[q + 3] = 255; }
+    g.putImageData(d, 0, 0);
+    return c.toDataURL('image/png');
+  }
+  async function maskFromUrl(url) {
+    const im = await loadImg(url), c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data, m = new Float32Array(c.width * c.height);
+    for (let i = 0, q = 0; i < m.length; i++, q += 4) m[i] = d[q] / 255;
+    return { w: c.width, h: c.height, m };
+  }
+
+  // mask: the saved cut-out (from the last "Use this photo"), or null
+  function open({ src, params, paper = '#fffdf6', cutout = null, mask = null }) {
     return new Promise(async (resolve) => {
       let img;
       try { img = await loadImg(src); } catch (e) { resolve(null); return; }
@@ -227,6 +244,7 @@
       delete P.tolerance; delete P.bg; delete P.tolTouched;   // from the old background remover
       const prev = pixels(img, PREVIEW), [GW, GH] = gridSize(img);
       let grid = null, aiBusy = false;   // the cut-out mask at grid size ({ w, h, m }), made by the AI
+      if (mask && P.removeBg) { try { grid = await maskFromUrl(mask); } catch { grid = null; } }   // the saved cut-out: no need to ask the AI again
       let ew = new Float32Array(prev.w * prev.h), ev = new Float32Array(prev.w * prev.h), edited = false;   // brush edits, preview size
       let tool = null, base = null;   // base: the mask at preview size (cached)
       const undo = [];
@@ -480,7 +498,14 @@
           }
           const { brush, ...keep } = P;
           // a cut-out keeps its transparency (PNG); a plain photo stays a JPEG
-          done({ dataUrl: m ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.92), params: keep });
+          // the cut-out with the brush fixes in it, kept so the next Touch up starts from it
+          let saved = null;
+          if (m) {
+            const gm = edited ? applyEdits(grid.m.length === GW * GH ? grid.m : maskAt(grid, GW, GH, 0), maskAt({ w: prev.w, h: prev.h, m: ew }, GW, GH, 0), maskAt({ w: prev.w, h: prev.h, m: ev }, GW, GH, 0))
+              : grid.m.length === GW * GH ? grid.m : maskAt(grid, GW, GH, 0);
+            saved = maskUrl({ w: GW, h: GH, m: gm });
+          }
+          done({ dataUrl: m ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.92), params: keep, mask: saved });
         }
       });
       const hold = box.querySelector('[data-pe=hold]');

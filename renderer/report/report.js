@@ -237,7 +237,11 @@
     if (mode() === 'detail' && R.busy) { status('Still reading settings, one moment…'); while (R.busy) await new Promise((r) => setTimeout(r, 300)); }
     await loadThumbs();
   };
-  $('printBtn').onclick = async () => { await ready(); const r = await api.reportPrint(); if (r && r !== true) status(`Not printed: ${r}`); };
+  $('printBtn').onclick = async () => {
+    await ready(); status('Making the PDF to print…');
+    try { const r = await api.reportPrint({ name: $('title').value }); status(r && r.error ? `Couldn’t open the PDF (${r.error}). It’s saved at ${r.file}` : 'Opened in your PDF viewer: check the preview there, then press Ctrl+P (or its Print button) to print.'); }
+    catch (err) { status(`Couldn’t make the PDF: ${err.message || err}`); }
+  };
   $('pdfBtn').onclick = async () => {
     await ready();
     try { const f = await api.reportPdf({ name: $('title').value.trim() || 'Print report' }); if (f) status(`Saved ${f}`); }
@@ -428,7 +432,7 @@
     const waiting = C.phone.filter((p) => p.purpose === 'cert' && p.state === 'waiting').slice(0, 6);
     $('certControls').innerHTML = `
       <div class="row"><button class="btn" id="certBack">← Back to the report</button><span class="ctitle">Certificate for <b>${esc(nameOf(C.job))}</b></span>
-        <span class="grow"></span><button class="btn" id="certPrint">🖨 Print…</button><button class="btn primary" id="certPdf">Save as PDF…</button></div>
+        <span class="grow"></span><button class="btn" id="certPrint" title="Opens the certificate in your PDF viewer with a print preview; print from there">🖨 Print…</button><button class="btn primary" id="certPdf">Save as PDF…</button></div>
       <div class="row tpls" role="radiogroup" aria-label="Template">${Object.entries(TEMPLATES).map(([k, v]) =>
         `<label class="tpl t-${esc(k)} ${k === cur ? 'on' : ''}"><input type="radio" name="tpl" value="${esc(k)}" ${k === cur ? 'checked' : ''}><span class="dot"></span>${esc(v.label)}</label>`).join('')}</div>
       <div class="row">
@@ -456,16 +460,17 @@
   }
   const cstatus = (t) => { const el = $('cStatus'); if (el) el.textContent = t; };
 
-  function saveFields(photo, original) {
+  // photo, original, mask: undefined = keep as saved, null = remove, a data URL = the new one
+  function saveFields(photo, original, mask) {
     clearTimeout(C.saveT);
-    const run = () => api.certSet(C.job.id, C.fields, photo, original).catch((e) => cstatus(`Couldn’t save: ${e.message || e}`));
+    const run = () => api.certSet(C.job.id, C.fields, photo, original, mask).catch((e) => cstatus(`Couldn’t save: ${e.message || e}`));
     if (photo !== undefined || original !== undefined) return run();
     C.saveT = setTimeout(run, 400);
   }
   // a new photo: any touch up belongs to the old one
   async function setPhoto(dataUrl) {
-    C.photo = dataUrl; C.original = null; C.fields.edit = null;
-    await saveFields(dataUrl, null);
+    C.photo = dataUrl; C.original = null; C.mask = null; C.fields.edit = null;
+    await saveFields(dataUrl, null, null);
     certControls(); renderCert();
   }
   // 🎨 Touch up: always from the original photo, starting from the last settings
@@ -474,17 +479,18 @@
     const certEl = $('cert').querySelector('.cert');
     const paper = certEl ? getComputedStyle(certEl).getPropertyValue('--c-bg').trim() || '#ffffff' : '#ffffff';
     const cutout = api.cutoutRun ? { status: api.cutoutStatus, download: api.cutoutDownload, onProgress: api.onCutoutProgress, run: api.cutoutRun, claudeInfo: api.cutoutClaudeInfo, claude: api.cutoutClaude } : null;
-    const r = await window.PhotoEdit.open({ src: C.original || C.photo, params: C.fields.edit, paper, cutout });
+    // from the original (so edits can be changed or undone without losing quality), with the last settings and cut-out
+    const r = await window.PhotoEdit.open({ src: C.original || C.photo, params: C.fields.edit, paper, cutout, mask: C.mask });
     if (!r) return;
     if (!C.original) C.original = C.photo;
-    C.photo = r.dataUrl; C.fields.edit = r.params;
-    await saveFields(C.photo, C.original);
+    C.photo = r.dataUrl; C.fields.edit = r.params; C.mask = r.mask || null;
+    await saveFields(C.photo, C.original, C.mask);
     certControls(); renderCert(); cstatus('✓ Touched up. “Undo touch up” brings the original back.');
   }
   async function undoTouchUp() {
     if (!C.original) return;
-    C.photo = C.original; C.original = null; C.fields.edit = null;
-    await saveFields(C.photo, null);
+    C.photo = C.original; C.original = null; C.mask = null; C.fields.edit = null;
+    await saveFields(C.photo, null, null);
     certControls(); renderCert(); cstatus('The original photo is back.');
   }
   // ✨ AI ideas: names and sayings from Claude (kept per print in this window's storage)
@@ -571,7 +577,7 @@
   async function openCert(jobId) {
     const j = R.jobs.find((x) => x.id === jobId); if (!j) return;
     Object.assign(C, { job: j, fields: {}, photo: null, original: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false, ideas: ideasStore()[j.id] || null, ideasErr: '', ideasBusy: false });
-    try { const g = await api.certGet(j.id); C.fields = g.fields || {}; C.photo = g.photo; C.original = g.original || null; C.camera = g.camera || []; } catch (e) { status(String(e.message || e)); }
+    try { const g = await api.certGet(j.id); C.fields = g.fields || {}; C.photo = g.photo; C.original = g.original || null; C.mask = g.mask || null; C.camera = g.camera || []; } catch (e) { status(String(e.message || e)); }
     if (!C.ai && api.certAiInfo) C.ai = await api.certAiInfo().catch(() => null);
     try { C.phone = await api.tsPhotosList(); } catch { C.phone = []; }
     document.body.classList.add('cert-mode');
@@ -612,7 +618,11 @@
     else if (b.dataset.name != null) { C.fields.name = b.dataset.name; $('cName').value = b.dataset.name; saveFields(); renderCert(); }
     else if (b.dataset.say != null) { C.fields.message = b.dataset.say; $('cMsg').value = b.dataset.say; saveFields(); renderCert(); }
     else if (b.dataset.pw) usePhonePhoto(b.dataset.pw);
-    else if (b.id === 'certPrint') { const r = await api.reportPrint({ landscape: true }); if (r && r !== true) cstatus(`Not printed: ${r}`); }
+    else if (b.id === 'certPrint') {
+      const nm = (C.fields.name || '').trim() || nameOf(C.job); cstatus('Making the PDF to print…');
+      try { const r = await api.reportPrint({ name: `${nm} - certificate`, landscape: true }); cstatus(r && r.error ? `Couldn’t open the PDF (${r.error}). It’s saved at ${r.file}` : 'Opened in your PDF viewer: check the preview there, then press Ctrl+P (or its Print button) to print. Pick landscape if it asks.'); }
+      catch (err) { cstatus(`Couldn’t make the PDF: ${err.message || err}`); }
+    }
     else if (b.id === 'certPdf') {
       const nm = (C.fields.name || '').trim() || nameOf(C.job);
       try { const p = await api.reportPdf({ name: `${nm} - certificate`, landscape: true }); if (p) cstatus(`Saved ${p}`); } catch (err) { cstatus(`Couldn’t save the PDF: ${err.message || err}`); }

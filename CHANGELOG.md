@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.44.0
+- Certificates: **Touch up photo** opens again where you left off: the cut-out (with your box, Erase/Restore and
+  Claude fixes) is kept with the photo, so changing a slider later doesn't run the background remover again. **Start
+  over** still asks the AI fresh; **Undo touch up** brings back the original photo.
+- **🖨 Print…** (certificate and print report) now opens the page as a PDF in your PDF viewer (usually Edge), which
+  shows a real print preview: print from there with Ctrl+P. (The app's own printing could only show Windows' print
+  dialog, with no preview.)
+
 ## 2.43.1
 - Certificates: a cut-out is **trimmed to the model**, so it fills the photo frame instead of sitting in a sea of
   empty space. On by default (**Trim the empty space around the model**), with **Space around it** to leave more or
