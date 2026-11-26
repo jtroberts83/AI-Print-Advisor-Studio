@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.51.0
+- Certificates, **🔤 Fonts and sizes**: sizes are now in points (pt), as they print, with a slider and a box to type
+  the size. Dragging a slider up never makes the text smaller any more (before, it could jump smaller, bigger and
+  smaller again). When there isn't room for the size you pick, the text stops at the largest size that fits and the
+  row says so ("fits at 54.5 pt").
+- Certificates: To / From in a handwriting font were made smaller than needed (the font draws a little above its
+  line, which was taken for text not fitting).
+
 ## 2.50.0
 - Certificates, **✨ AI ideas**: choose how long the sayings are: **Short** (one line), **Medium** (two sentences)
   or **Long** (a card message of three or four sentences, which can greet the person by name: “Every dragon needs a

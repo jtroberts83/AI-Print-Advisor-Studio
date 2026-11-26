@@ -251,10 +251,12 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .cedit .cdel:hover { background: #fde8e7; }
 .fontbox { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid #dde1e8; border-radius: 10px; background: #fafbfc; max-width: 720px; }
 
-.frow { display: grid; grid-template-columns: 110px minmax(160px, 260px) minmax(120px, 1fr) 48px; gap: 10px; align-items: center; }
+.frow { display: grid; grid-template-columns: 110px minmax(160px, 260px) minmax(120px, 1fr) auto 90px; gap: 10px; align-items: center; }
+.frow .fpt { font-size: 13px; white-space: nowrap; }
+.frow .fpt input { width: 4.2em; font: inherit; padding: 3px 4px; border: 1px solid #c7ccd6; border-radius: 6px; }
 .frow .flbl { font-weight: 700; font-size: 13px; }
 .frow select { font: inherit; padding: 4px 6px; border: 1px solid #c7ccd6; border-radius: 7px; background: #fff; }
-.frow output { font-variant-numeric: tabular-nums; font-size: 13px; text-align: right; }
+.frow output { font-variant-numeric: tabular-nums; font-size: 12px; color: #8a5a00; }
 #cFonts.on { border-color: #7c6ce0; }
 .chip.say { max-width: 100%; white-space: normal; }
 .saylen select { font: inherit; padding: 3px 6px; border: 1px solid #c7ccd6; border-radius: 7px; background: #fff; margin-left: 4px; }

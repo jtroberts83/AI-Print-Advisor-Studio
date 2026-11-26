@@ -521,8 +521,10 @@
     if (!C.job) return;
     $('cert').style.removeProperty('--z');   // measured at full size; fitCert() scales it to the window again
     $('cert').innerHTML = certHtml();
+    templateSizes();
     applyFonts();
     C.shrunk = fitText();
+    fontRows();
     const note = $('cFontNote'); if (note) note.hidden = !C.shrunk;
     fitCert();
   }
@@ -551,32 +553,61 @@
     return fontsHere;
   }
   // (before 2.49 To and From shared one setting, "parties": it still applies to both until one is changed)
-  const fontOf = (k) => { const fs = C.fields.fonts || {}, f = fs[k] || ((k === 'to' || k === 'from') ? fs.parties : null); return { family: (f && f.family) || '', scale: f && Number(f.scale) > 0 ? Number(f.scale) : 1 }; };
+  const fontOf = (k) => { const fs = C.fields.fonts || {}, f = fs[k] || ((k === 'to' || k === 'from') ? fs.parties : null); return { family: (f && f.family) || '', scale: f && Number(f.scale) > 0 ? Number(f.scale) : 1, sized: !!(f && Number(f.scale) > 0) }; };
+  // Sizes are shown in points (pt) as they print. The setting is kept as a share of the template's size, so a
+  // size still looks right after changing the template.
+  let tplPx = new WeakMap();   // element → the template's size in px (measured at full size, before any change)
+  C.basePt = C.basePt || {};   // group → the template's size in pt (of the group's biggest text)
+  const ptOf = (px) => px * 0.75;
+  const groupEls = (cert, g) => [...cert.querySelectorAll(g.sel)];
+  function templateSizes() {
+    const cert = $('cert').querySelector('.cert'); if (!cert) return;
+    tplPx = new WeakMap();
+    for (const g of FONT_GROUPS) {
+      const els = groupEls(cert, g);
+      els.forEach((el) => tplPx.set(el, parseFloat(getComputedStyle(el).fontSize)));
+      if (els.length) C.basePt[g.k] = ptOf(Math.max(...els.map((el) => tplPx.get(el))));   // the biggest text in the group
+    }
+  }
+  const setScale = (cert, g, s) => { for (const el of groupEls(cert, g)) { const px = tplPx.get(el); if (px) el.style.fontSize = `${(px * s).toFixed(2)}px`; } };
   function applyFonts() {
     const cert = $('cert').querySelector('.cert'); if (!cert) return;
     for (const g of FONT_GROUPS) {
-      const { family, scale } = fontOf(g.k);
-      if (!family && scale === 1) continue;
-      const els = [...cert.querySelectorAll(g.sel)], sizes = els.map((el) => parseFloat(getComputedStyle(el).fontSize));
-      els.forEach((el, i) => {
-        if (family) el.style.fontFamily = `"${family}", ${getComputedStyle(el).fontFamily}`;
-        if (scale !== 1 && sizes[i]) el.style.fontSize = `${(sizes[i] * scale).toFixed(2)}px`;
-      });
+      const { family, scale, sized } = fontOf(g.k);
+      if (!family && !sized) continue;
+      for (const el of groupEls(cert, g)) if (family) el.style.fontFamily = `"${family}", ${getComputedStyle(el).fontFamily}`;
+      if (sized) setScale(cert, g, scale);
+    }
+  }
+  // the size rows: the slider and the box are in pt; says so when the text had to be smaller to fit
+  const ptRange = (k) => { const b = C.basePt[k] || 12; return { lo: Math.max(4, Math.round(b * 0.3)), hi: Math.round(b * 3), b }; };
+  const ptRound = (pt) => Math.round(pt * 2) / 2;
+  function fontRows() {
+    const box = $('certControls').querySelector('.fontbox'); if (!box) return;
+    for (const g of FONT_GROUPS) {
+      const { lo, hi, b } = ptRange(g.k), want = ptRound(b * fontOf(g.k).scale), got = C.fitPt && C.fitPt[g.k];
+      for (const inp of box.querySelectorAll(`[data-fsize="${g.k}"]`)) {
+        inp.min = lo; inp.max = hi;
+        if (document.activeElement !== inp) inp.value = want;
+      }
+      const o = box.querySelector(`[data-fout="${g.k}"]`);
+      if (o) { o.textContent = got && got < want - 0.25 ? `fits at ${got} pt` : ''; o.title = got && got < want - 0.25 ? `There is room for at most ${got} pt here, so that is what it prints at` : ''; }
     }
   }
   function fontsHtml() {
-    const custom = FONT_GROUPS.some((g) => { const f = fontOf(g.k); return f.family || f.scale !== 1; });
+    const custom = FONT_GROUPS.some((g) => { const f = fontOf(g.k); return f.family || f.sized; });
     const head = `<div class="row"><button class="btn${custom ? ' on' : ''}" id="cFonts" aria-expanded="${!!C.fontsOpen}" title="Change the font and size of each kind of text">🔤 Fonts and sizes${custom ? ' (changed)' : ''}</button>${custom ? '<button class="link" id="cFontsReset">Use the template’s fonts</button>' : ''}</div>`;
     if (!C.fontsOpen) return head;
     const list = installedFonts();
     return head + `<div class="fontbox">${FONT_GROUPS.map((g) => {
-      const f = fontOf(g.k), pct = Math.round(f.scale * 100), tp = TEMPLATES[tplKey(C.fields.template)];
+      const f = fontOf(g.k), { lo, hi, b } = ptRange(g.k), pt = ptRound(b * f.scale), tp = TEMPLATES[tplKey(C.fields.template)];
       const label = g.k === 'to' ? tp.to : g.k === 'from' ? tp.from : g.label;   // the template's own words ("Presented to"…)
       return `<div class="frow"><span class="flbl">${esc(label)}</span>
         <select data-ffam="${g.k}" aria-label="${esc(label)} font"><option value="">Template’s font</option>${list.map((n) => `<option value="${esc(n)}" style="font-family:'${esc(n)}'" ${n === f.family ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
-        <input type="range" min="50" max="200" step="5" value="${pct}" data-fsize="${g.k}" aria-label="${esc(label)} size">
-        <output data-fout="${g.k}">${pct}%</output></div>`;
-    }).join('')}<small id="cFontNote" class="muted" ${C.shrunk ? '' : 'hidden'}>Some text was made a little smaller than you set so that everything fits on the page.</small></div>`;
+        <input type="range" min="${lo}" max="${hi}" step="0.5" value="${pt}" data-fsize="${g.k}" aria-label="${esc(label)} size in points">
+        <label class="fpt"><input type="number" min="${lo}" max="${hi}" step="0.5" value="${pt}" data-fsize="${g.k}" aria-label="${esc(label)} size in points"> pt</label>
+        <output data-fout="${g.k}"></output></div>`;
+    }).join('')}<small id="cFontNote" class="muted" ${C.shrunk ? '' : 'hidden'}>Some text was made a little smaller so that everything fits on the page.</small></div>`;
   }
   // Long names, messages, To / From: nothing is ever cut off. The text wraps onto more lines, and if the side
   // still overflows, things get smaller step by step (the name, the message, the stats, then the photo gets
@@ -585,12 +616,41 @@
     const cert = $('cert').querySelector('.cert'); if (!cert) return false;
     const info = cert.querySelector('.cinfo'), body = cert.querySelector('.cbody');
     let shrunk = false;
+    // 1. Sizes you chose: bigger than the template only as far as it still fits. The cap doesn't depend on the size
+    //    you chose, so dragging the slider up never makes the text smaller.
+    const vals = () => [...cert.querySelectorAll('.party .val')];
+    // how far a To / From box really overflows: handwriting fonts draw a little above and below their line, which
+    // isn't text being cut off, so up to a quarter of the font size is allowed
+    const valOver = (v) => { const fs = parseFloat(getComputedStyle(v).fontSize); return Math.max(0, v.scrollWidth - v.clientWidth - 1) + Math.max(0, v.scrollHeight - v.clientHeight - fs * 0.25); };
+    const excess = () => {
+      let e = Math.max(0, cert.scrollHeight - cert.clientHeight) + (info ? Math.max(0, info.scrollHeight - info.clientHeight) : 0);
+      for (const v of vals()) e += valOver(v);
+      for (const h of cert.querySelectorAll('.chead h1, .cname')) e += Math.max(0, h.scrollWidth - h.clientWidth);
+      return e;
+    };
+    C.fitPt = {};
+    const mine = new Set();
+    for (const g of FONT_GROUPS) {
+      const { scale: s, sized } = fontOf(g.k);
+      if (!sized) continue;
+      for (const el of groupEls(cert, g)) mine.add(el);
+      if (s < 1) continue;
+      const fits = () => excess() <= base + 1;
+      setScale(cert, g, 1); const base = excess();
+      setScale(cert, g, 3); if (fits()) { setScale(cert, g, s); continue; }   // even the biggest fits
+      let lo = 1, hi = 3;   // the largest size that fits (to ½ pt), searched the same way whatever size you chose
+      while ((hi - lo) * (C.basePt[g.k] || 12) > 0.25) { const m = (lo + hi) / 2; setScale(cert, g, m); if (fits()) lo = m; else hi = m; }
+      const pt = Math.max(ptRound(C.basePt[g.k] || 12), Math.floor((C.basePt[g.k] || 12) * lo * 2) / 2);   // never below the template's size
+      if (ptRound((C.basePt[g.k] || 12) * s) <= pt) { setScale(cert, g, s); continue; }
+      setScale(cert, g, pt / (C.basePt[g.k] || 12)); C.fitPt[g.k] = pt; shrunk = true;
+    }
     if (info) {
       const over = () => info.scrollHeight > info.clientHeight + 1;
       const msg = info.querySelector('.cmsg'), name = info.querySelector('.cname'), stats = info.querySelector('.cstats'), fun = info.querySelector('.cfun');
       // sizes as shares of where each starts (the template's size, or the size chosen in Fonts and sizes)
       const base = new Map([name, msg, stats].filter(Boolean).map((el) => [el, parseFloat(getComputedStyle(el).fontSize)]));
-      const size = (el, k) => () => { if (el) el.style.fontSize = `${(base.get(el) * k).toFixed(2)}px`; };
+      // (sizes you chose are left alone here: they were fitted above)
+      const size = (el, k) => () => { if (el && !mine.has(el)) el.style.fontSize = `${(base.get(el) * k).toFixed(2)}px`; };
       const steps = [];
       for (let k = 0.93; k >= 0.66; k -= 0.067) steps.push(size(name, k));
       for (let k = 0.96; k >= 0.8; k -= 0.04) steps.push(size(msg, k));
@@ -602,11 +662,13 @@
       for (let k = 0.75; k >= 0.62; k -= 0.042) steps.push(size(stats, k));
       for (let k = 0.52; k >= 0.3; k -= 0.04) steps.push(size(msg, k));
       for (const s of steps) { if (!over()) break; s(); shrunk = true; }
+      // still too much (very long text even at the template's sizes): your sizes get smaller too
+      if (over()) for (const el of [name, msg, stats]) { if (!el || !mine.has(el)) continue; const px0 = parseFloat(getComputedStyle(el).fontSize); for (let k = 0.95; k >= 0.4 && over(); k -= 0.05) { el.style.fontSize = `${(px0 * k).toFixed(2)}px`; shrunk = true; } }
     }
     // To / From: wrap onto two lines, smaller until it fits its box
-    for (const v of cert.querySelectorAll('.party .val')) {
+    for (const v of vals()) {
       const px0 = parseFloat(getComputedStyle(v).fontSize);
-      for (let px = px0; px >= 10 && (v.scrollWidth > v.clientWidth + 1 || v.scrollHeight > v.clientHeight + 1); px -= 1.3) { v.style.fontSize = `${px}px`; if (px < px0) shrunk = true; }
+      for (let k = 0.95; k >= 0.4 && valOver(v) > 0; k -= 0.05) { v.style.fontSize = `${(px0 * k).toFixed(2)}px`; shrunk = true; }
     }
     return shrunk;
   }
@@ -655,6 +717,7 @@
       <div class="status" id="cStatus" role="status" aria-live="polite"></div>`;
     for (const img of $('certControls').querySelectorAll('[data-pthumb]')) api.tsPhotoData(img.dataset.pthumb).then((u) => { if (u) img.src = u; }).catch(() => {});
     if (C.qr) showQr();
+    fontRows();
   }
   const cstatus = (t) => { const el = $('cStatus'); if (el) el.textContent = t; };
 
@@ -814,9 +877,17 @@
     }
     if (t.dataset.ffam != null || t.dataset.fsize != null) {   // a font or size: only the certificate is redrawn (the slider keeps moving)
       const k = t.dataset.ffam || t.dataset.fsize, all = { ...(f.fonts || {}) }, cur = { ...fontOf(k) };
-      if (t.dataset.ffam != null) cur.family = t.value; else { cur.scale = Number(t.value) / 100; const o = $('certControls').querySelector(`[data-fout="${k}"]`); if (o) o.textContent = `${t.value}%`; }
+      if (t.dataset.ffam != null) cur.family = t.value;
+      else {
+        const { lo, hi, b } = ptRange(k), pt = Number(t.value);
+        if (!(pt > 0)) return;   // typing: not a number yet
+        cur.scale = Math.round(Math.min(hi, Math.max(lo, pt)) / b * 1000) / 1000; cur.sized = true;
+        if (Math.abs(cur.scale - 1) < 0.002) cur.scale = 1;
+        for (const o of $('certControls').querySelectorAll(`[data-fsize="${k}"]`)) if (o !== t) o.value = ptRound(pt);
+      }
       if (all.parties) { for (const p of ['to', 'from']) if (!all[p]) all[p] = { ...all.parties }; delete all.parties; }
-      if (!cur.family && cur.scale === 1) delete all[k]; else all[k] = { family: cur.family, scale: cur.scale };
+      const e = {}; if (cur.family) e.family = cur.family; if (cur.sized) e.scale = cur.scale;
+      if (Object.keys(e).length) all[k] = e; else delete all[k];
       f.fonts = all; saveFields(); renderCert();
       return;
     }

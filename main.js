@@ -2717,8 +2717,8 @@ ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original, mask) => {
     for (const k of ['title', 'name', 'message', 'details', 'to', 'from', 'parties']) {
       const v = f.fonts[k]; if (!v || typeof v !== 'object') continue;
       const family = typeof v.family === 'string' && /^[A-Za-z0-9 '\-]{1,60}$/.test(v.family) ? v.family : '';
-      const scale = Math.min(2, Math.max(0.5, Number(v.scale) || 1));
-      if (family || scale !== 1) fonts[k] = { family, scale };
+      const sized = Number(v.scale) > 0, scale = Math.min(3, Math.max(0.3, Number(v.scale) || 1));   // a size you set is kept even at the template's size
+      if (family || sized) fonts[k] = sized ? { family, scale } : { family };
     }
     if (Object.keys(fonts).length) clean.fonts = fonts;
   }
