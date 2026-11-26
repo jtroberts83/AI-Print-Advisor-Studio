@@ -528,13 +528,14 @@
   }
 
   // 🔤 Fonts and sizes: each kind of text can have its own font and size (a % of the template's size).
-  // fields.fonts = { title: { family, scale }, name: …, message: …, details: …, parties: … }
+  // fields.fonts = { title: { family, scale }, name: …, message: …, details: …, to: …, from: … }
   const FONT_GROUPS = [
     { k: 'title', label: 'Title', sel: '.chead h1, .chead .kicker' },
     { k: 'name', label: 'Name', sel: '.cname' },
     { k: 'message', label: 'Message', sel: '.cmsg' },
     { k: 'details', label: 'Details', sel: '.cinfo .intro, .born, .cstats, .cstats dt, .cfun, .party .lbl' },
-    { k: 'parties', label: 'To / From', sel: '.party .val' },
+    { k: 'to', label: 'To', sel: '.cfoot > .party:first-of-type .val' },
+    { k: 'from', label: 'From', sel: '.cfoot > .party:last-of-type .val' },
   ];
   const FONT_CHOICES = ['Segoe Script', 'Lucida Handwriting', 'Brush Script MT', 'Segoe Print', 'Ink Free', 'Gabriola', 'Mistral', 'Kristen ITC', 'Comic Sans MS',
     'Palatino Linotype', 'Book Antiqua', 'Georgia', 'Garamond', 'Times New Roman', 'Cambria', 'Constantia', 'Baskerville Old Face', 'Old English Text MT', 'Edwardian Script ITC', 'Vivaldi',
@@ -549,7 +550,8 @@
     fontsHere = FONT_CHOICES.filter((f) => base.some(([b, bw]) => w(`"${f}", ${b}`) !== bw));
     return fontsHere;
   }
-  const fontOf = (k) => { const f = C.fields.fonts && C.fields.fonts[k]; return { family: (f && f.family) || '', scale: f && Number(f.scale) > 0 ? Number(f.scale) : 1 }; };
+  // (before 2.49 To and From shared one setting, "parties": it still applies to both until one is changed)
+  const fontOf = (k) => { const fs = C.fields.fonts || {}, f = fs[k] || ((k === 'to' || k === 'from') ? fs.parties : null); return { family: (f && f.family) || '', scale: f && Number(f.scale) > 0 ? Number(f.scale) : 1 }; };
   function applyFonts() {
     const cert = $('cert').querySelector('.cert'); if (!cert) return;
     for (const g of FONT_GROUPS) {
@@ -568,10 +570,11 @@
     if (!C.fontsOpen) return head;
     const list = installedFonts();
     return head + `<div class="fontbox">${FONT_GROUPS.map((g) => {
-      const f = fontOf(g.k), pct = Math.round(f.scale * 100);
-      return `<div class="frow"><span class="flbl">${esc(g.label)}</span>
-        <select data-ffam="${g.k}" aria-label="${esc(g.label)} font"><option value="">Template’s font</option>${list.map((n) => `<option value="${esc(n)}" style="font-family:'${esc(n)}'" ${n === f.family ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
-        <input type="range" min="50" max="200" step="5" value="${pct}" data-fsize="${g.k}" aria-label="${esc(g.label)} size">
+      const f = fontOf(g.k), pct = Math.round(f.scale * 100), tp = TEMPLATES[tplKey(C.fields.template)];
+      const label = g.k === 'to' ? tp.to : g.k === 'from' ? tp.from : g.label;   // the template's own words ("Presented to"…)
+      return `<div class="frow"><span class="flbl">${esc(label)}</span>
+        <select data-ffam="${g.k}" aria-label="${esc(label)} font"><option value="">Template’s font</option>${list.map((n) => `<option value="${esc(n)}" style="font-family:'${esc(n)}'" ${n === f.family ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+        <input type="range" min="50" max="200" step="5" value="${pct}" data-fsize="${g.k}" aria-label="${esc(label)} size">
         <output data-fout="${g.k}">${pct}%</output></div>`;
     }).join('')}<small id="cFontNote" class="muted" ${C.shrunk ? '' : 'hidden'}>Some text was made a little smaller than you set so that everything fits on the page.</small></div>`;
   }
@@ -809,6 +812,7 @@
     if (t.dataset.ffam != null || t.dataset.fsize != null) {   // a font or size: only the certificate is redrawn (the slider keeps moving)
       const k = t.dataset.ffam || t.dataset.fsize, all = { ...(f.fonts || {}) }, cur = { ...fontOf(k) };
       if (t.dataset.ffam != null) cur.family = t.value; else { cur.scale = Number(t.value) / 100; const o = $('certControls').querySelector(`[data-fout="${k}"]`); if (o) o.textContent = `${t.value}%`; }
+      if (all.parties) { for (const p of ['to', 'from']) if (!all[p]) all[p] = { ...all.parties }; delete all.parties; }
       if (!cur.family && cur.scale === 1) delete all[k]; else all[k] = { family: cur.family, scale: cur.scale };
       f.fonts = all; saveFields(); renderCert();
       return;
@@ -826,6 +830,7 @@
   $('certControls').addEventListener('change', async (e) => {
     const t = e.target;
     if (t.name === 'tpl') { C.fields.template = t.value; saveFields(); certControls(); renderCert(); }
+    else if (t.dataset.ffam != null || t.dataset.fsize != null) certControls();   // let go of a slider / picked a font: "(changed)" and the reset link
     else if (t.id === 'cFile' && t.files[0]) { try { cstatus('Adding the photo…'); await setPhoto(await shrinkPhoto(t.files[0])); cstatus('✓ Photo added.'); } catch (err) { cstatus(err.message || String(err)); } }
   });
   $('certControls').addEventListener('click', async (e) => {

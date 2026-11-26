@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.49.0
+- Certificates, **🔤 Fonts and sizes**: **To** and **From** now have their own font and size (they shared one before;
+  a setting made in 2.48 applies to both until you change one). The panel names them as the template does
+  (“Presented to”, “Created by”…). The “(changed)” label and **Use the template's fonts** appear as soon as you
+  change something.
+
 ## 2.48.0
 - Certificates: **🔤 Fonts and sizes**. Pick the font and the size (50–200 % of the template's) for the title, the
   name, the message, the details and To / From, each on its own. Only fonts this PC has are listed. Kept with the

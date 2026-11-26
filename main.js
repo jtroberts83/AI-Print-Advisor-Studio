@@ -2714,7 +2714,7 @@ ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original, mask) => {
   // fonts and sizes chosen on the certificate: { title|name|message|details|parties: { family, scale } }
   if (f.fonts && typeof f.fonts === 'object') {
     const fonts = {};
-    for (const k of ['title', 'name', 'message', 'details', 'parties']) {
+    for (const k of ['title', 'name', 'message', 'details', 'to', 'from', 'parties']) {
       const v = f.fonts[k]; if (!v || typeof v !== 'object') continue;
       const family = typeof v.family === 'string' && /^[A-Za-z0-9 '\-]{1,60}$/.test(v.family) ? v.family : '';
       const scale = Math.min(2, Math.max(0.5, Number(v.scale) || 1));
