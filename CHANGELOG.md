@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.53.0
+- Certificates, **🧵 Filaments used**: **Find** in your filament library works. Its results were there but squeezed
+  out of sight under the suggestions. It also finds by several words in any order (“matte beige”) and by color family.
+- The suggested matches go by color first (compared the way eyes see color), and use the slicer's filament name
+  (finish such as Silk or Wood, the same profile) and type to help. A “Generic PLA” filament no longer pulls the
+  same few filaments to the top for every color, so a rope sliced in light beige now suggests your beige filaments.
+- New **💧 Pick a color on the photo**: click a part of the certificate's photo (a magnifier shows the spot) to list
+  the filaments in your library closest to it, for a part sliced in one color but printed in another.
+- **Colors**: new **💧 From the photo** adds a color picked from the photo, the color as it really printed.
+
 ## 2.52.0
 - Certificates, **Remove the background**: a model in several pieces (a plaque or base, a rope, separate parts) no
   longer loses pieces. The closer second look could drop whole pieces the first look found; now it only tidies the

@@ -2705,7 +2705,7 @@ ipcMain.handle('cert-camera-photo', async (_e, jobId, id) => { await S.ready;
 ipcMain.handle('cert-filaments', async () => {
   const st = Fil.stock();
   return (st ? st.filaments : []).map(f => ({ name: [f.brand, f.line, f.color].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim(), type: f.type || '', finish: f.finish || '',
-    hex: Inv.mainHex(f), preset: f.preset || '' })).filter(f => f.name);
+    hex: Inv.mainHex(f), preset: f.preset || '', fams: Array.isArray(f.fams) ? f.fams.slice(0, 4) : [] })).filter(f => f.name);
 });
 // fields: { name, to, from, message, template, weight, edit }; photo: a data: URL (new photo), null (remove it) or undefined (keep);
 // original: the photo before Touch up (same values), so edits can be changed or undone later

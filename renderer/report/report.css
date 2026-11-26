@@ -310,3 +310,17 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .fsug { display: grid; gap: 2px; margin-bottom: 6px; }
 .filbox input[type=text] { font: inherit; padding: 4px 6px; border: 1px solid #c7ccd6; border-radius: 7px; }
 .pe-rot { align-items: center; } .pe-rot .pe-rl { font-weight: 600; font-size: 13px; } .pe-rot .pe-str { flex: 1; min-width: 140px; margin: 0; }
+/* the filament picker: its library list must not be squeezed to nothing by the suggestions above it (2.53.0) */
+.platebox.filbox { max-height: none; overflow: visible; }
+.platebox.filbox > * { flex: none; }
+.filbox .fillib { min-height: 60px; }
+/* 💧 picking a color on the photo */
+body.picking .cert .cphoto, body.picking .cert .cphoto img { cursor: crosshair; }
+.pickhint { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; background: #1f2433; color: #fff; padding: 8px 14px; border-radius: 999px; font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.25); pointer-events: none; }
+.pickhint kbd { background: rgba(255,255,255,.18); border-radius: 4px; padding: 0 5px; font: inherit; }
+.loupe { position: fixed; z-index: 1001; pointer-events: none; background: #fff; border-radius: 10px; padding: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.3); display: grid; gap: 4px; font-size: 12px; }
+.loupe canvas { width: 99px; height: 99px; border-radius: 6px; display: block; }
+.loupe div { display: flex; align-items: center; gap: 6px; }
+.loupe .sw { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); }
+@media print { .pickhint, .loupe { display: none !important; } }
+body.picking .controls.certctl { position: static; }

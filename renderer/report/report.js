@@ -544,25 +544,48 @@
   // 🧵 Filaments used: picked from the filament library (or typed), listed under the photo
   const filsOf = () => (Array.isArray(C.fields.filaments) ? C.fields.filaments : []);
   const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(String(h).slice(i, i + 2), 16) || 0);
-  const hexDist = (a, b) => { const p = hexRgb(a), q = hexRgb(b); return Math.hypot((p[0] - q[0]) * 0.3, (p[1] - q[1]) * 0.59, (p[2] - q[2]) * 0.11); };
-  const presetBase = (s) => String(s || '').replace(/\s*@.*$/, '').toLowerCase().trim();
-  // for each filament the print(s) used: the library's closest one (same slicer preset first, then the same type, then the color)
+  // colors compared the way eyes see them (CIE Lab); lightness counts less (a photo's or slicer's light level is rarely exact)
+  const labOf = (h) => {
+    const [r, g, b] = hexRgb(h).map((v) => { v /= 255; return v > 0.04045 ? ((v + 0.055) / 1.055) ** 2.4 : v / 12.92; });
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    const x = f((r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047), y = f(r * 0.2126 + g * 0.7152 + b * 0.0722), z = f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  };
+  const hexDist = (a, b, lw = 0.6) => { const p = labOf(a), q = labOf(b); return Math.hypot((p[0] - q[0]) * lw, p[1] - q[1], p[2] - q[2]); };
+  const presetBase = (s) => String(s || '').replace(/\s*@.*$/, '').replace(/\s*-\s*copy\b.*$/i, '').toLowerCase().trim();
+  const FINISHES = ['silk', 'matte', 'wood', 'translucent', 'transparent', 'glow', 'marble', 'metal', 'galaxy', 'sparkle', 'glitter', 'rainbow', 'dual', 'tri', 'carbon', 'satin', 'color change'];
+  const finishWords = (s) => FINISHES.filter((w) => new RegExp(`\\b${w}\\b`, 'i').test(s || ''));
+  // how well a library filament fits a color (+ the slicer filament's name/type when known); lower is better
+  function filScore(l, color, f) {
+    let s = color ? hexDist(l.hex, color) : 40;
+    if (!f) return s;
+    if (f.anyType) return s + (l.type && !f.anyType.includes(l.type.toUpperCase()) ? 10 : 0);   // a picked color: the print's materials first
+    if (f.type && l.type && f.type.toUpperCase() !== l.type.toUpperCase()) s += 30;
+    const pb = presetBase(f.name);
+    if (pb && !/^generic\b/.test(pb) && presetBase(l.preset) === pb) s -= 12;   // the same (non-generic) slicer profile
+    const want = finishWords(f.name), has = finishWords(`${l.finish} ${l.name}`);
+    if (want.length) s += want.some((w) => has.includes(w)) ? -8 : 12;
+    else if (has.some((w) => w !== 'matte')) s += 8;   // a plain profile: special finishes (silk, translucent…) are less likely
+    return s;
+  }
+  const bestFor = (color, f, n = 4) => (C.lib || []).map((l) => ({ l, s: filScore(l, color, f) })).sort((a, b) => a.s - b.s)
+    .filter((x, i, a) => a.findIndex((y) => y.l.name === x.l.name && y.l.hex === x.l.hex) === i).slice(0, n).map((x) => x.l);
+  // for each filament the print(s) used: the library's closest ones (color first; the slicer's type, profile and finish help)
   function filSuggestions() {
-    const lib = C.lib || [], seen = new Set(), out = [];
+    const seen = new Set(), out = [];
     const used = partsOf().flatMap((x) => x.filaments || []).filter((f) => f.color || f.name);
     const key = (f) => `${presetBase(f.name)}|${String(f.color).toLowerCase()}`;
     for (const f of used) {
       if (seen.has(key(f))) continue; seen.add(key(f));
-      const score = (l) => (presetBase(l.preset) && presetBase(l.preset) === presetBase(f.name) ? 0 : 120) + (f.type && l.type && f.type.toUpperCase() !== l.type.toUpperCase() ? 80 : 0) + (f.color ? hexDist(l.hex, f.color) : 60);
-      const best = lib.slice().sort((a, b) => score(a) - score(b)).slice(0, 3);
-      out.push({ print: f, best });
+      out.push({ print: f, best: bestFor(f.color, f) });
     }
     return out;
   }
   const filRow = (l, attr) => `<button type="button" class="frow2" ${attr}><span class="sw" style="background:${esc(l.hex)}"></span><span>${esc(l.name)}</span><span class="muted small">${esc(l.type)}${l.finish && l.finish !== 'Basic' ? ` · ${esc(l.finish)}` : ''}</span></button>`;
   function filLibList() {
-    const q = (C.filQ || '').trim().toLowerCase(), lib = C.lib || [];
-    const hits = lib.map((l, i) => ({ l, i })).filter(({ l }) => !q || `${l.name} ${l.type} ${l.finish}`.toLowerCase().includes(q)).slice(0, 80);
+    const words = (C.filQ || '').trim().toLowerCase().split(/\s+/).filter(Boolean), lib = C.lib || [];
+    const text = (l) => `${l.name} ${l.type} ${l.finish} ${(l.fams || []).join(' ')}`.toLowerCase();
+    const hits = lib.map((l, i) => ({ l, i })).filter(({ l }) => words.every((w) => text(l).includes(w))).slice(0, 120);
     return hits.length ? hits.map(({ l, i }) => filRow(l, `data-flib="${i}"`)).join('') : `<p class="muted small">${lib.length ? 'No filament in your library matches that.' : 'Your filament library is empty (add yours on the Filament screen), or type one below.'}</p>`;
   }
   function filsHtml() {
@@ -577,19 +600,79 @@
     return head + `<div class="platebox filbox">
       ${sug.length && (C.lib || []).length ? `<h4>Best matches from your library for this print’s filaments</h4>${sug.map((s, k) => `<div class="fsug"><span class="muted small">Slicer: <span class="sw" style="background:${esc(s.print.color || '#888')}"></span>${esc(String(s.print.name || '').replace(/\s*@.*$/, '').trim() || s.print.type || 'filament')}</span>${s.best.map((l) => filRow(l, `data-flib="${(C.lib || []).indexOf(l)}"`)).join('')}</div>`).join('')}
         <div class="row"><button type="button" class="btn" id="cFilBest">Add the best match for each</button></div>` : ''}
+      <h4>Match a color on the photo</h4>
+      <div class="row"><button type="button" class="btn" id="cFilPick" ${C.photo || R.thumbs.get(C.job.id) ? '' : 'disabled'} title="Then click a part of the photo (the rope, the base…): the filaments in your library closest to that color are listed here">💧 Pick a color on the photo</button>
+        ${C.filPick ? `<span class="muted small">You picked <span class="sw" style="background:${esc(C.filPick)}"></span> ${esc(C.filPick)}. Closest in your library (a photo’s light changes colors a little):</span>` : '<span class="muted small">For a part the slicer’s color doesn’t match (e.g. it was sliced as white but printed in beige).</span>'}</div>
+      ${C.filPick ? `<div class="fsug">${bestFor(C.filPick, { anyType: partsOf().flatMap((x) => x.filaments || []).map((x) => String(x.type || '').toUpperCase()).filter(Boolean) }, 6).map((l) => filRow(l, `data-flib="${(C.lib || []).indexOf(l)}"`)).join('')}</div>` : ''}
       <h4>Your filament library</h4>
-      <label class="psearch">Find <input type="search" id="cFilQ" placeholder="brand, line, color or type" value="${esc(C.filQ || '')}"></label>
+      <label class="psearch">Find <input type="search" id="cFilQ" placeholder="brand, line, color, finish or type, e.g. matte beige" value="${esc(C.filQ || '')}"></label>
       <div id="filLib" class="fillib">${filLibList()}</div>
       <h4>Not in the library?</h4>
       <div class="row"><input type="text" id="cFilName" maxlength="90" placeholder="e.g. Sunlu Silk PLA Gold"><input type="color" id="cFilHex" value="#c9a227" aria-label="Its color"><input type="text" id="cFilType" maxlength="24" size="8" placeholder="PLA"><button type="button" class="btn" id="cFilCustom">Add</button></div>
       <div class="row"><button type="button" class="btn primary" id="cFilDone">Done</button></div></div>`;
   }
   const addFil = (x) => { const list = [...filsOf()]; if (list.length >= 16 || list.some((y) => y.name === x.name && y.hex === x.hex)) return; list.push({ name: x.name, hex: x.hex, type: x.type || '' }); C.fields.filaments = list; saveFields(); certControls(); renderCert(); };
+  // 💧 eyedropper: click a part of the certificate's photo; its color (the median of a small patch, so a speck or a glint
+  // doesn't decide it) goes to done(hex). A loupe next to the pointer shows the spot magnified and the color it would take.
+  let picking = null;
+  function startPick(done) {
+    if (picking) picking.stop();
+    const img = $('cert').querySelector('.cphoto img');
+    if (!img || !img.naturalWidth) { cstatus('Add a photo first.'); return; }
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const cv = document.createElement('canvas'); cv.width = nw; cv.height = nh;
+    const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(img, 0, 0);
+    const r = Math.max(1, Math.round(Math.min(nw, nh) / 300));
+    const at = (e) => {   // the pointer → a pixel of the image (the photo is drawn with object-fit cover or contain)
+      const b = img.getBoundingClientRect(), cover = getComputedStyle(img).objectFit === 'cover';
+      const s = cover ? Math.max(b.width / nw, b.height / nh) : Math.min(b.width / nw, b.height / nh);
+      const x = (e.clientX - b.left - (b.width - nw * s) / 2) / s, y = (e.clientY - b.top - (b.height - nh * s) / 2) / s;
+      return x >= 0 && y >= 0 && x < nw && y < nh ? [Math.floor(x), Math.floor(y)] : null;
+    };
+    const sample = ([x, y]) => {
+      const x0 = Math.max(0, x - r), y0 = Math.max(0, y - r), d = cx.getImageData(x0, y0, Math.min(nw, x + r + 1) - x0, Math.min(nh, y + r + 1) - y0).data;
+      const ch = [[], [], []];
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) for (let k = 0; k < 3; k++) ch[k].push(d[i + k]);
+      if (!ch[0].length) return null;   // a see-through part of a cut-out
+      return '#' + ch.map((v) => v.sort((a, b) => a - b)[v.length >> 1].toString(16).padStart(2, '0')).join('');
+    };
+    const tip = document.createElement('div'); tip.className = 'pickhint';
+    tip.innerHTML = '💧 Click the part of the photo whose color you want. <kbd>Esc</kbd> cancels.';
+    const loupe = document.createElement('div'); loupe.className = 'loupe'; loupe.hidden = true;
+    loupe.innerHTML = '<canvas width="99" height="99"></canvas><div><span class="sw"></span><b></b></div>';
+    const lc = loupe.querySelector('canvas').getContext('2d'); lc.imageSmoothingEnabled = false;
+    document.body.append(tip, loupe); document.body.classList.add('picking');
+    img.scrollIntoView({ block: 'center' });   // the options panel stops sticking to the top while picking (see report.css), so the photo can be seen
+    const move = (e) => {
+      const p = at(e); loupe.hidden = !p; if (!p) return;
+      const z = 11, n = 9;   // 9×9 pixels around the spot, 11× bigger
+      lc.clearRect(0, 0, 99, 99); lc.drawImage(cv, p[0] - 4, p[1] - 4, n, n, 0, 0, n * z, n * z);
+      lc.strokeStyle = '#fff'; lc.lineWidth = 2; lc.strokeRect(44, 44, z, z); lc.strokeStyle = '#000'; lc.lineWidth = 1; lc.strokeRect(43, 43, z + 2, z + 2);
+      const hex = sample(p) || '';
+      loupe.querySelector('.sw').style.background = hex || 'transparent'; loupe.querySelector('b').textContent = hex || 'see-through';
+      loupe.style.left = `${Math.min(innerWidth - 130, e.clientX + 18)}px`; loupe.style.top = `${Math.min(innerHeight - 140, e.clientY + 18)}px`;
+    };
+    const click = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const p = e.target === img || img.contains(e.target) || e.target.closest('.cphoto') ? at(e) : null;
+      const hex = p && sample(p);
+      stop();
+      if (hex) done(hex); else cstatus(p ? 'That spot is see-through. Click the model itself.' : 'Picking a color was cancelled.');
+    };
+    const key = (e) => { if (e.key === 'Escape') { e.preventDefault(); stop(); } };
+    function stop() {
+      document.removeEventListener('mousemove', move, true); document.removeEventListener('click', click, true); document.removeEventListener('keydown', key, true);
+      tip.remove(); loupe.remove(); document.body.classList.remove('picking'); picking = null;
+    }
+    setTimeout(() => { document.addEventListener('click', click, true); }, 0);   // not the click that started it
+    document.addEventListener('mousemove', move, true); document.addEventListener('keydown', key, true);
+    picking = { stop };
+  }
   function colorsHtml() {
     const list = colorList(), own = Array.isArray(C.fields.colors);
     return `<div class="row ccolors"><span class="lbl">Colors</span>
       ${list.map((c, i) => `<span class="cedit"><input type="color" data-ci="${i}" value="${esc(c)}" title="Click to change this color" aria-label="Color ${i + 1}"><button type="button" class="cdel" data-cdel="${i}" title="Remove this color (one the print didn’t really use)" aria-label="Remove color ${i + 1}">×</button></span>`).join('')}
-      ${list.length < 16 ? '<button type="button" class="btn" id="cColAdd" title="Add a color">+ Add</button>' : ''}
+      ${list.length < 16 ? `<button type="button" class="btn" id="cColAdd" title="Add a color">+ Add</button><button type="button" class="btn" id="cColPick" ${C.photo || R.thumbs.get(C.job.id) ? '' : 'disabled'} title="Click a part of the photo to add its color: the color as it really printed">💧 From the photo</button>` : ''}
       ${own ? '<button type="button" class="link" id="cColReset">Use the print’s colors</button>' : '<span class="muted small">From the print. Click one to change it, × to remove it.</span>'}</div>`;
   }
   // "Snapmaker U1 #2", "Snapmaker U1 #1" → "Snapmaker U1 #1 & #2"
@@ -1034,6 +1117,8 @@
     else if (b.id === 'cNoPhoto') { await setPhoto(null); }
     else if (b.id === 'cTouch') touchUp();
     else if (b.id === 'cFilOpen') { C.filOpen = !C.filOpen; certControls(); }
+    else if (b.id === 'cFilPick') startPick((hex) => { C.filPick = hex; C.filOpen = true; certControls(); const f = $('cFilPick'); if (f) f.scrollIntoView({ block: 'center' }); });
+    else if (b.id === 'cColPick') startPick((hex) => { const list = colorList(); if (list.length < 16 && !list.includes(hex)) { C.fields.colors = [...list, hex]; saveFields(); certControls(); renderCert(); } const c = $('cColPick'); if (c) c.scrollIntoView({ block: 'center' }); });
     else if (b.id === 'cFilDone') { C.filOpen = false; certControls(); }
     else if (b.id === 'cFilClear') { delete C.fields.filaments; saveFields(); certControls(); renderCert(); }
     else if (b.dataset.flib != null) { const l = (C.lib || [])[Number(b.dataset.flib)]; if (l) addFil(l); }
