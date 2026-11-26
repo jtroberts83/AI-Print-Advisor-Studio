@@ -399,6 +399,7 @@ function renderInventory(fil) {
       Color remix picks from it, and the app tells you which colors a model needs that you don't have yet.
       <div class="actions" style="margin-top:14px">
         <button class="btn primary" data-start="shot">📷 From a screenshot of your orders</button>
+        ${PHONE || !api.amazonImport ? '' : '<button class="btn" data-start="amazon">🛒 From your Amazon orders</button>'}
         <button class="btn" data-start="add">+ Add filament by hand</button>
       </div>
       <p class="muted" style="font-size:13px;margin:10px 0 0">Screenshots work from Amazon or any store's order history, a receipt or a product page; Claude reads them with the API key from Settings.</p></div>`;
@@ -1109,7 +1110,7 @@ function closeModal() {
   tagWrite = null;
   $('#overlay').classList.remove('open'); openFid = null; openPanel = null; tagScan = null; scannedSid = null;
   if (reloadPending) setTimeout(() => reloadInventory(), 0);
-  if (shot) { shot.urls.forEach(u => URL.revokeObjectURL(u)); shot = null; }
+  if (shot) { shot.urls.forEach(u => URL.revokeObjectURL(u)); if (shot.amazon && /reading/.test(shot.amazon.phase)) api.amazonCancel?.(); shot = null; }
   render();
 }
 
@@ -1331,7 +1332,7 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-nfc-settings]')) { e.preventDefault(); return window.parent.__openNfcSettings?.(); }
   if (e.target.closest('[data-open-backups]')) { e.preventDefault(); return api.filamentOpenFolder().catch(err => toast(ipcMessage(err))); }
   const start = e.target.closest('[data-start]');
-  if (start) return start.dataset.start === 'shot' ? openShot() : openForm();
+  if (start) return start.dataset.start === 'shot' ? openShot() : start.dataset.start === 'amazon' ? openAmazon() : openForm();
 });
 
 function backup() {
@@ -1851,6 +1852,7 @@ function addShotFiles(files) {
 }
 function renderShot() {
   if (!shot) return;
+  if (shot.amazon) return shot.amazon.found ? renderAmazonFound() : renderAmazon();
   const r = shot.result, ready = shot.files.length && !shot.busy && hasKey;
   $('#modal').innerHTML = `<button class="x" data-close>×</button><div class="shot">
     <h2>Add filament from a screenshot</h2>
@@ -1880,7 +1882,7 @@ function reviewHtml(r) {
     <td>${it.photo ? `<label class="ph" title="${it.photoPage ? (it.photoExact ? 'Product photo from the brand’s store' : 'Photo of the product line from the brand’s store (no photo of this exact color)') : 'Product photo cut from the screenshot'}. Untick to leave it out."><img src="${it.photo}" alt=""><span><input type="checkbox" data-k="usePhoto" ${it.usePhoto ? 'checked' : ''}> use</span></label>
       ${it.photoPage ? `<a class="phsrc" href="${esc(it.photoPage)}" target="_blank" rel="noopener">${it.photoExact ? 'from store' : 'store · line photo'}</a>` : ''}` : '<span class="muted" style="font-size:12px">none</span>'}</td>
     <td><input type="color" data-k="hex0" value="${esc(it.hex[0])}" title="Swatch color (approximate)"></td>
-    <td><input data-k="color" value="${esc(it.color)}">${ex ? `<div class="match">Adds spools to your existing ${esc(ex.color)}</div>` : ''}${it.note ? `<div class="note">${esc(it.note)}</div>` : ''}</td>
+    <td><input data-k="color" value="${esc(it.color)}">${ex ? `<div class="match">Adds spools to your existing ${esc(ex.color)}</div>` : ''}${it.note ? `<div class="note">${esc(it.note)}</div>` : ''}${it.url ? `<a class="phsrc" href="${esc(it.url)}" target="_blank" rel="noopener" title="${esc(it.src?.title || '')}">product ↗</a>` : ''}</td>
     <td><input data-k="brand" list="shotBrands" value="${esc(it.brand)}"></td>
     <td><select data-k="type">${opt(FIL_TYPES, it.type)}</select></td>
     <td><input data-k="line" value="${esc(it.line)}"></td>
@@ -1921,18 +1923,167 @@ function addFromShot() {
     }
     const price = it.price === '' || it.price == null ? null : +it.price;
     for (let i = 0; i < (+it.spools || 0); i++) {
-      const s = newSpool(f.id, { how: 'order', status: it.status === 'ordered' ? 'ordered' : 'new', price, bought: it.order_date || today(), note: 'Added from a screenshot' });
+      const s = newSpool(f.id, { how: 'order', status: it.status === 'ordered' ? 'ordered' : 'new', price, bought: it.order_date || today(), note: shot.amazon ? 'Added from an Amazon order' : 'Added from a screenshot' });
+      if (it.amz) s.amz = it.amz;   // this order's product, so a later import knows it's in
       if (it.status === 'opened') setStatus(s, 'opened');
       if (loc && it.status !== 'ordered') setLoc(s, loc);
       spools++;
     }
   });
   if (!newFil && !spools) return toast(skipped ? 'Each checked row needs a color and a brand' : 'Nothing checked to add');
+  if (shot.amazon && !shot.amazon.found) state.amazon = { store: shot.amazon.domain, last: today() };   // "only orders since my last import" next time
+  if (shot.amazon?.found) { const ids = shot.amazon.found; api.amazonWatchDone({ orders: ids }).catch(() => {}); amzFound = amzFound.filter(o => !ids.includes(o.order)); setTimeout(renderAmazonBanner, 0); }
   persist(); closeModal();
   toast(`Added ${spools} spool${spools === 1 ? '' : 's'}${newFil ? ` · ${newFil} new filament${newFil === 1 ? '' : 's'}` : ''}${skipped ? ` · ${skipped} skipped (no color or brand)` : ''}`);
 }
 
+// ---------- 🛒 From your Amazon orders ----------
+// The app reads your Amazon order history in its own Amazon window (you sign in there yourself; main.js "amazon-*"),
+// finds the filament orders, and Claude turns each product title and picture into brand, line, color and spools (a
+// bundle's colors from its picture). The same check list as screenshots, before anything is added.
+// state.amazon = { store, last }: the store last used and the day of the last import (for "only newer orders").
+function openAmazon() {
+  if (shot) shot.urls.forEach(u => URL.revokeObjectURL(u));
+  const y = new Date().getFullYear(), a = state.amazon || {};
+  shot = { files:[], urls:[], busy:false, err:'', result:null,
+    amazon: { stores:[], domain: a.store || 'amazon.com', from: a.last ? +a.last.slice(0, 4) : y, to: y, onlyNew: !!a.last, phase:'setup', msg:'' } };
+  openFid = null;
+  $('#overlay').classList.add('open');
+  renderShot();
+  api.amazonStores().then(l => { if (shot?.amazon) { shot.amazon.stores = l; renderShot(); } });
+  refreshKey().then(() => { if (shot) renderShot(); });
+}
+function renderAmazon() {
+  const A = shot.amazon, r = shot.result, y = new Date().getFullYear(), last = (state.amazon || {}).last;
+  const years = Array.from({ length: y - 2005 + 1 }, (_, i) => y - i);
+  const yopt = v => years.map(x => `<option ${x === v ? 'selected' : ''}>${x}</option>`).join('');
+  const busy = A.phase === 'reading' || A.phase === 'claude';
+  $('#modal').innerHTML = `<button class="x" data-close>×</button><div class="shot">
+    <h2>Add filament from your Amazon orders</h2>
+    <p class="muted" style="margin:0">The app opens Amazon in its own window. You sign in there yourself (the app never sees or keeps your password).
+      It then reads your order history, only reading, never buying or changing anything, and finds your filament orders. You check the list before anything is added.</p>
+    ${hasKey ? '' : `<div class="mfr" style="margin-top:12px">Without an Anthropic API key the list has the product titles, prices and pictures, but you fill in each color yourself. With a key in the app's <a href="#" data-app-settings>Settings</a>, Claude reads each product (a few cents) and fills in brand, line, color and spools, including each color of a bundle.</div>`}
+    <div class="amzform">
+      <label>Amazon store <select class="sel" data-amz="domain" ${busy ? 'disabled' : ''}>${(A.stores.length ? A.stores : [{ domain: A.domain, name: A.domain }]).map(s => `<option value="${esc(s.domain)}" ${s.domain === A.domain ? 'selected' : ''}>${esc(s.name)} · ${esc(s.domain)}</option>`).join('')}</select></label>
+      <label>Orders from <select class="sel" data-amz="from" ${busy ? 'disabled' : ''}>${yopt(A.from)}</select></label>
+      <label>to <select class="sel" data-amz="to" ${busy ? 'disabled' : ''}>${yopt(A.to)}</select></label>
+      ${last ? `<label><input type="checkbox" data-amz="onlyNew" ${A.onlyNew ? 'checked' : ''} ${busy ? 'disabled' : ''}> Only orders since my last import (${fmtDate(last)})</label>` : ''}
+    </div>
+    <div class="actions" style="margin-top:4px;align-items:center">
+      <button class="btn primary" data-amzgo ${busy ? 'disabled' : ''}>${busy ? '<span class="spin"></span> Working…' : r ? 'Read again' : 'Read my orders'}</button>
+      ${busy ? '<button class="btn" data-amzcancel>Cancel</button><button class="btn" data-amzshow title="See what the app is reading">Show the Amazon window</button>' : ''}
+      <span class="muted" style="font-size:13px">${esc(A.msg)}</span>
+      ${shot.err ? `<span style="color:var(--danger);font-size:14px">${esc(shot.err)}</span>` : ''}
+      <span style="flex:1"></span>
+      ${busy ? '' : '<button class="btn small" data-amzout title="Forget the Amazon sign-in kept by this app (the next import asks you to sign in again)">Sign out of Amazon</button>'}
+    </div>
+    ${r ? reviewHtml(r) : ''}
+  </div>`;
+}
+// already added (this order's product, or the same product bought the same day in the order list that came with the app)
+function amazonHad(src) {
+  const key = `${src.order}|${src.asin}`;
+  return Object.values(state.spools).some(s => s.amz === key) || allFilaments().some(f => (f.sources || []).some(x => x.asin === src.asin && x.date === src.date));
+}
+// order lines + rows read from them (Claude's, or guessed from the titles) → review rows
+function amazonRows(lines, rows, storeDomain) {
+  return rows.map(it => {
+    const s = lines[it.line_no], had = amazonHad(s);
+    return { ...it, src: s, on: !had, store: `Amazon (${String(storeDomain).replace(/^amazon\./, '')})`, order_date: s.date, status: s.ordered ? 'ordered' : 'new',
+      photo: s.photo, usePhoto: !!s.photo, amz: `${s.order}|${s.asin}`, asin: s.asin, url: s.url,
+      note: [had ? 'Already in your inventory (this order). Tick it to add it again.' : '', it.note].filter(Boolean).join(' ') };
+  });
+}
+const knownLines = () => [...new Set([...Object.keys(typeof SPECS !== 'undefined' ? SPECS : {}).map(k => k.split('|').slice(0, 2).join(' | ')),
+  ...allFilaments().map(f => `${f.brand} | ${f.line}`)])].sort();
+async function runAmazon() {
+  const mine = shot, A = mine.amazon;
+  A.phase = 'reading'; A.msg = 'Opening Amazon…'; mine.err = ''; mine.result = null; renderShot();
+  const off = api.onAmazonProgress(m => { if (shot === mine && A.phase === 'reading') { A.msg = m.text || ''; renderShot(); } });
+  try {
+    const got = await api.amazonImport({ domain: A.domain, from: Math.min(A.from, A.to), to: Math.max(A.from, A.to), since: A.onlyNew ? (state.amazon || {}).last : null });
+    off();
+    if (shot !== mine) return;
+    if (!got.items.length) { A.phase = 'setup'; A.msg = got.cancelled ? 'Cancelled.' : `Read ${got.orders} order${got.orders === 1 ? '' : 's'}: no filament found.`; return renderShot(); }
+    A.phase = 'claude'; A.msg = hasKey ? `Claude is reading ${got.items.length} product${got.items.length === 1 ? '' : 's'}…` : ''; renderShot();
+    const t0 = performance.now();
+    const read = await api.amazonReadItems({ items: got.items, currency: got.currency, known: knownLines() });
+    const r = { items: amazonRows(got.items, read.items, got.store), notes: read.notes, secs: (performance.now() - t0) / 1000, cost: read.cost };
+    r.notes = [got.currency !== 'USD' ? `Prices are in ${got.currency}, as Amazon shows them.` : '', r.notes].filter(Boolean).join(' ');
+    mine.result = r;
+    A.phase = 'done';
+    A.msg = `${got.cancelled ? 'Stopped early: ' : ''}read ${got.orders} order${got.orders === 1 ? '' : 's'}, ${got.items.length} filament order line${got.items.length === 1 ? '' : 's'}.`;
+  } catch (err) { off(); A.phase = 'setup'; mine.err = ipcMessage(err); A.msg = ''; }
+  if (shot === mine) renderShot();
+}
+// ---------- The daily check's finds (Settings → Filament → Amazon filament orders) ----------
+// New filament orders wait here until the person adds them or says they aren't filament; spools Amazon says arrived
+// are switched from On order to Sealed as soon as this screen is open (the app opens it in the background for that).
+let amzFound = [];
+async function syncAmazonWatch() {
+  if (PHONE || !api.amazonWatchFound) return;
+  let w; try { w = await api.amazonWatchFound(); } catch { return; }
+  amzFound = w.found || [];
+  const done = [];
+  for (const key of w.arrived || []) {
+    const list = Object.values(state.spools).filter(s => s.amz === key && s.status === 'ordered');
+    list.forEach(s => setStatus(s, 'new', 'Delivered (Amazon)'));
+    done.push(key);
+    if (list.length) toast(`Filament arrived: ${list.length} spool${list.length === 1 ? '' : 's'} marked as sealed (in stock)`, 5000);
+  }
+  if (done.length) { persist(); api.amazonWatchDone({ arrived: done }).catch(() => {}); }
+  renderAmazonBanner();
+}
+function renderAmazonBanner() {
+  let el = $('#amzBanner');
+  if (!amzFound.length) { el?.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'amzBanner'; el.className = 'amzbanner'; $('#filterBar')?.before(el); }
+  const spools = amzFound.reduce((t, o) => t + o.rows.reduce((u, x) => u + (+x.spools || 0), 0), 0);
+  el.innerHTML = `🛒 <b>New filament from your Amazon orders:</b> ${amzFound.length} order${amzFound.length === 1 ? '' : 's'}${spools ? `, ${spools} spool${spools === 1 ? '' : 's'}` : ''}.
+    <button class="btn small primary" data-amzfound>Check and add</button>`;
+}
+function openAmazonFound() {
+  if (!amzFound.length) return toast('No new filament orders from Amazon');
+  if (shot) shot.urls.forEach(u => URL.revokeObjectURL(u));
+  const items = [], notes = [];
+  let cost = 0;
+  for (const o of amzFound) {
+    items.push(...amazonRows(o.lines, o.rows, o.store));
+    cost += o.cost || 0;
+    if (o.notes && !notes.includes(o.notes)) notes.push(o.notes);
+    if (o.currency && o.currency !== 'USD' && !notes.some(n => n.includes(o.currency))) notes.unshift(`Prices are in ${o.currency}, as Amazon shows them.`);
+  }
+  shot = { files:[], urls:[], busy:false, err:'', result: { items, notes: notes.join(' '), secs: 0, cost },
+    amazon: { stores:[], domain: amzFound[0].store, phase:'done', msg:'', found: amzFound.map(o => o.order) } };
+  openFid = null;
+  $('#overlay').classList.add('open');
+  renderShot();
+}
+function renderAmazonFound() {
+  const r = shot.result, A = shot.amazon;
+  const orders = amzFound.filter(o => A.found.includes(o.order));
+  $('#modal').innerHTML = `<button class="x" data-close>×</button><div class="shot">
+    <h2>New filament from your Amazon orders</h2>
+    <p class="muted" style="margin:0">The daily check found ${orders.length === 1 ? 'this order' : `these ${orders.length} orders`}${orders.some(o => o.rows.some(x => x.claude)) ? ', and Claude read the products' : ''}. Check the list, then add it, or tell the app it isn’t filament.</p>
+    <ul class="amzorders">${orders.map(o => `<li>Order ${esc(o.order)} · ${fmtDate(o.date)} · ${o.lines.length} product${o.lines.length === 1 ? '' : 's'}</li>`).join('')}</ul>
+    ${reviewHtml(r)}
+    <div class="actions" style="margin-top:8px;align-items:center">
+      <span class="muted" style="font-size:13px">Not filament, or added already?</span>
+      <button class="btn small" data-amzdismiss title="Forget these orders (nothing is added)">Not filament: dismiss</button>
+      <button class="btn small" data-close title="Keep them here for later">Later</button>
+    </div>
+  </div>`;
+}
+if (!PHONE && api.onAmazonWatch) {
+  api.onAmazonWatch(() => syncAmazonWatch());
+  setTimeout(() => syncAmazonWatch().then(() => { if (window.parent !== window && window.parent.__takeAmazonOpen?.()) openAmazonFound(); }), 0);
+}
+window.__openAmazonFound = () => syncAmazonWatch().then(() => openAmazonFound());
+document.addEventListener('click', e => { if (e.target.closest('[data-amzfound]')) openAmazonFound(); });
+
 $('#shotBtn').addEventListener('click', () => openShot());
+if (PHONE || !api.amazonImport) $('#amzBtn')?.remove();
+else $('#amzBtn')?.addEventListener('click', () => openAmazon());
 $('#overlay').addEventListener('click', async e => {
   if (!shot) return;
   const t = e.target;
@@ -1940,6 +2091,11 @@ $('#overlay').addEventListener('click', async e => {
   const del = t.closest('[data-shotdel]');
   if (del) { const i = +del.dataset.shotdel; URL.revokeObjectURL(shot.urls[i]); shot.files.splice(i, 1); shot.urls.splice(i, 1); return renderShot(); }
   if (t.closest('[data-shotadd]')) return addFromShot();
+  if (t.closest('[data-amzgo]')) return runAmazon();
+  if (t.closest('[data-amzdismiss]')) { const ids = shot.amazon.found; await api.amazonWatchDone({ orders: ids }).catch(() => {}); amzFound = amzFound.filter(o => !ids.includes(o.order)); closeModal(); renderAmazonBanner(); return toast('Dismissed'); }
+  if (t.closest('[data-amzcancel]')) { api.amazonCancel(); shot.amazon.msg = 'Stopping…'; return renderShot(); }
+  if (t.closest('[data-amzshow]')) return api.amazonShow();
+  if (t.closest('[data-amzout]')) { try { await api.amazonSignOut(); toast('Signed out of Amazon in this app'); } catch (err) { toast(ipcMessage(err), 4000); } return; }
   if (t.closest('[data-shotweb]')) {
     const mine = shot, list = missingPhotos(mine.result);
     if (!list.length) return;
@@ -1982,6 +2138,8 @@ function updateShotItem(t) {
 $('#overlay').addEventListener('input', e => { if (shot) updateShotItem(e.target); });
 $('#overlay').addEventListener('change', e => {
   if (!shot) return;
+  const a = e.target.dataset.amz;
+  if (a && shot.amazon) { shot.amazon[a] = e.target.type === 'checkbox' ? e.target.checked : a === 'domain' ? e.target.value : +e.target.value; return renderShot(); }
   if (e.target.matches('[data-shotfile]')) { addShotFiles(e.target.files); renderShot(); }
   else updateShotItem(e.target);
 });
@@ -2229,7 +2387,7 @@ function spoolHow(s) {
   if (s.how) return s.how;
   if (s.src) return 'order';
   const c = (s.log || []).find(e => e.type === 'created'), n = c && c.note || '';
-  if (/^(Imported from order|Added from a screenshot)$/.test(n)) return 'order';
+  if (/^(Imported from order|Added from a screenshot|Added from an Amazon order)$/.test(n)) return 'order';
   if (/^(Added|Added with \+|Added by scanning its tag)$/.test(n)) return 'manual';
   return null;   // carried over from the old version, etc.
 }

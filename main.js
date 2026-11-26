@@ -278,6 +278,7 @@ function createWindow() {
     return { action: 'deny' };
   });
   if (DEMO) win.on('page-title-updated', (e) => e.preventDefault());
+  win.on('closed', () => { if (AMZ.win && !AMZ.win.isDestroyed()) AMZ.win.destroy(); });   // the hidden Amazon window mustn't keep the app running
   const fileArg = process.argv.slice(1).find(a => /\.(3mf|aipsession)$/i.test(a));
   if (fileArg) win.webContents.once('did-finish-load', () => win.webContents.send('open-from-os', fileArg));
 }
@@ -1501,6 +1502,335 @@ async function filamentFetch({ url, as } = {}) {
   if (as === 'text') return buf.toString('utf8').slice(0, 2_000_000);
   return JSON.parse(buf.toString('utf8'));
 }
+
+// ---------- 🛒 Filament from your Amazon orders (src/amazon.js) ----------
+// The app's own Amazon window (its own saved session, "persist:amazon"): the person signs in there themselves, the app
+// never sees or keeps the password. The app only opens order-history and order-details pages and reads them, one at
+// a time with a pause, and never clicks, buys or changes anything. Hidden while reading; shown when Amazon wants the
+// person (sign in, a code, a puzzle) during an import they started, and on request.
+// Two ways in: an import the person starts on the Filament screen (pick the store and years), and the daily check
+// (Settings → Filament → Amazon filament orders), which remembers where it left off (amazon-watch.json).
+const Amz = require('./src/amazon');
+const AMZ = { win: null, busy: false, cancel: false };
+const amzSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const amzPause = () => amzSleep(900 + Math.random() * 1600);   // like a person reading, and kind to Amazon
+function amzWindow() {
+  if (AMZ.win && !AMZ.win.isDestroyed()) return AMZ.win;
+  const w = new BrowserWindow({ width: 1150, height: 860, show: false, autoHideMenuBar: true, title: 'Amazon · sign in here (the app never sees your password)', icon: appIconPath,
+    webPreferences: { partition: 'persist:amazon', sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false } });
+  w.on('page-title-updated', (e) => e.preventDefault());
+  // a plain Chrome browser to Amazon (without the app's and Electron's names in it)
+  w.webContents.setUserAgent(w.webContents.getUserAgent().replace(/\s(Electron|AI[ -]?3D[ -]?Print[ -]?Advisor[ -]?Studio|ai-3d-print-advisor-studio)\/\S+/gi, ''));
+  w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  const stay = (e, url) => { try { if (!Amz.amazonHost(new URL(url).hostname) && !(AMZ_FAKE && url.startsWith(AMZ_FAKE + '/'))) e.preventDefault(); } catch { e.preventDefault(); } };
+  w.webContents.on('will-navigate', stay); w.webContents.on('will-redirect', stay);
+  w.on('closed', () => { if (AMZ.win === w) AMZ.win = null; });
+  AMZ.win = w;
+  return w;
+}
+const amzGone = (w) => !w || w.isDestroyed();
+// tests only: AIPA_FAKE_AMAZON=http://127.0.0.1:port serves pages laid out like Amazon’s (a test server), never in a release
+const AMZ_FAKE = /^http:\/\/127\.0\.0\.1:\d+$/.test(process.env.AIPA_FAKE_AMAZON || '') ? process.env.AIPA_FAKE_AMAZON : null;
+const amzListUrl = (s, y, start) => (AMZ_FAKE ? `${AMZ_FAKE}/your-orders/orders?timeFilter=year-${y}&startIndex=${start || 0}` : Amz.listUrl(s, y, start));
+const amzDetailUrl = (s, id) => (AMZ_FAKE ? `${AMZ_FAKE}/gp/your-account/order-details?orderID=${encodeURIComponent(id)}` : Amz.detailUrl(s, id));
+async function amzOpen(w, url) {
+  await w.loadURL(url).catch((e) => { if (!/ERR_ABORTED|ERR_FAILED \(-2\)/.test(String(e.message))) throw e; });
+}
+const signinScript = '!!document.querySelector("#ap_email, #signInSubmit, input[name=\\"email\\"], input[name=\\"password\\"]")';
+// open a page and run a reader script on it. When Amazon wants the person first: in an import they started, show the
+// window and wait for them; in the background check, stop (error SIGNIN) and tell them instead.
+async function amzRead(w, url, script, send, background) {
+  for (let round = 0; round < 4; round++) {
+    if (amzGone(w) || AMZ.cancel) throw new Error('CANCELLED');
+    await amzOpen(w, url);
+    let r = null;
+    for (let t = 0; t < 8; t++) {   // the page may still be filling in
+      await amzSleep(t ? 700 : 400);
+      if (amzGone(w)) throw new Error('CANCELLED');
+      r = await w.webContents.executeJavaScript(script).catch(() => null);
+      if (r && (r.signin || (r.orders ? r.orders.length : Object.keys(r.items || {}).length))) break;
+      if (Amz.needsPerson(w.webContents.getURL())) break;
+    }
+    if (r && !r.signin && !Amz.needsPerson(w.webContents.getURL())) return r;
+    if (background) throw new Error('SIGNIN');
+    send({ step: 'signin', text: 'Sign in to Amazon in the window that opened (the app never sees your password). Reading starts by itself after that.' });
+    w.show(); w.focus();
+    await amzWaitSignedIn(w);
+    send({ step: 'reading', text: 'Signed in. Reading your orders…' });
+    if (!amzGone(w)) w.hide();
+  }
+  throw new Error('Amazon kept asking to sign in. Try again, or open the Amazon window to see why.');
+}
+async function amzWaitSignedIn(w) {
+  const until = Date.now() + 15 * 60e3;
+  for (;;) {
+    await amzSleep(1000);
+    if (amzGone(w) || AMZ.cancel) throw new Error('CANCELLED');
+    if (Date.now() > until) throw new Error('Signing in took too long. Try again.');
+    const u = w.webContents.getURL();
+    if (Amz.needsPerson(u) || /\/ap\//.test(u)) continue;
+    const still = await w.webContents.executeJavaScript(signinScript).catch(() => true);
+    if (!still && !w.webContents.isLoading()) return;
+  }
+}
+// read the order history: years to…from (newest first), stopping at orders before `since`; orders in `skip` aren't
+// opened again. Returns the filament order lines (with product pictures) and every order read ({ id: date }).
+async function amazonScan(s, { from, to, since, skip, background }, send) {
+  const w = amzWindow();
+  const items = [], read = {};
+  let orders = 0, withFil = 0, cancelled = false;
+  try {
+    years: for (let y = to; y >= from; y--) {
+      for (let start = 0, page = 1; start < 3000; start += 10, page++) {
+        send({ step: 'reading', text: `Reading your ${y} orders, page ${page}… (${orders} order${orders === 1 ? '' : 's'} read, ${withFil} with filament)` });
+        const r = await amzRead(w, amzListUrl(s, y, start), Amz.LIST_SCRIPT, send, background);
+        let fresh = 0;
+        for (const card of r.orders) {
+          if (card.id in read) continue;
+          const date = Amz.parseDate(card.head, s.domain) || Amz.parseDate(card.text, s.domain);
+          read[card.id] = date; fresh++; orders++;
+          if (since && date && date < since) break years;   // newest first: everything after this is older
+          if (skip && skip.has(card.id)) continue;
+          if (!card.items.some((i) => Amz.isFilament(i.title))) continue;
+          await amzPause();
+          send({ step: 'reading', text: `Reading a filament order from ${date || y}… (${orders} order${orders === 1 ? '' : 's'} read, ${withFil} with filament)` });
+          const d = await amzRead(w, amzDetailUrl(s, card.id), Amz.DETAIL_SCRIPT, send, background).catch((err) => { if (/^(CANCELLED|SIGNIN)$/.test(err.message)) throw err; return null; });
+          const found = Amz.orderItems(card, d, s.domain);
+          if (found.length) { withFil++; items.push(...found); }
+        }
+        if (!fresh || r.orders.length < 10) break;
+        await amzPause();
+      }
+    }
+  } catch (err) {
+    if (err.message !== 'CANCELLED') throw err;
+    cancelled = true;
+  } finally {
+    if (!amzGone(w)) w.hide();
+  }
+  send({ step: 'pictures', text: `Getting the product pictures (${items.length})…` });
+  for (const it of items) {
+    let u = null; try { u = new URL(it.image); } catch {}
+    it.photo = null;
+    if (u && u.protocol === 'https:' && Amz.imageHostOk(u.hostname)) {
+      const img = await filamentFetch({ url: u.href, as: 'image' }).catch(() => null);
+      if (img && img.base64.length < 3_000_000) it.photo = `data:${img.type};base64,${img.base64}`;
+    }
+    delete it.image;
+  }
+  return { items, orders, read, cancelled };
+}
+ipcMain.handle('amazon-stores', () => Amz.STORES.map(({ domain, name, cur }) => ({ domain, name, cur })));
+ipcMain.handle('amazon-cancel', () => { AMZ.cancel = true; return true; });
+ipcMain.handle('amazon-show', () => { const w = AMZ.win; if (!amzGone(w)) { w.show(); w.focus(); return true; } return false; });
+ipcMain.handle('amazon-sign-out', async () => {
+  if (AMZ.busy) throw new Error('Wait for the reading to finish, or cancel it first.');
+  if (!amzGone(AMZ.win)) AMZ.win.destroy();
+  const { session } = require('electron');
+  await session.fromPartition('persist:amazon').clearStorageData();
+  return true;
+});
+// open the store's order page in the Amazon window so the person can sign in (Settings → "Sign in to Amazon")
+ipcMain.handle('amazon-sign-in', async (_e, domain) => {
+  if (AMZ.busy) throw new Error('Your Amazon orders are being read right now.');
+  const s = Amz.store(domain) || Amz.store((await amzWatchCfg()).store);
+  const w = amzWindow();
+  w.show(); w.focus();
+  await amzOpen(w, amzListUrl(s, new Date().getFullYear(), 0)).catch(() => {});
+  return true;
+});
+// { domain, from, to, since }: an import the person started on the Filament screen
+ipcMain.handle('amazon-import', async (e, opts = {}) => {
+  if (AMZ.busy) throw new Error('Your Amazon orders are already being read.');
+  const s = Amz.store(opts.domain);
+  if (!s) throw new Error('Pick your Amazon store.');
+  const now = new Date().getFullYear();
+  const to = Math.min(now, Math.max(1995, opts.to | 0 || now)), from = Math.min(to, Math.max(1995, opts.from | 0 || to));
+  const since = /^\d{4}-\d{2}-\d{2}$/.test(opts.since || '') ? opts.since : null;
+  const send = (m) => { if (!e.sender.isDestroyed()) e.sender.send('amazon-progress', m); };
+  AMZ.busy = true; AMZ.cancel = false;
+  try {
+    const r = await amazonScan(s, { from, to, since }, send);
+    return { items: r.items, orders: r.orders, cancelled: r.cancelled, store: s.domain, currency: s.cur, from, to, since };
+  } finally { AMZ.busy = false; }
+});
+// Claude reads order lines into inventory rows (the Filament screen's import; the daily check does the same here)
+function amzKnown() {
+  try {
+    const { catalog, state } = Fil.load();
+    const names = [...(catalog.orders || []), ...((state && state.custom) || [])].map((f) => f && f.brand && f.line ? `${f.brand} | ${f.line}` : null).filter(Boolean);
+    return [...new Set(names)].sort().slice(0, 400);
+  } catch { return []; }
+}
+ipcMain.handle('amazon-read-items', async (_e, { items, currency, known } = {}) => {
+  const src = (Array.isArray(items) ? items : []).slice(0, 200);
+  if (!(await getApiKey())) return { items: Amz.guessItems(src), notes: '', cost: 0, guessed: true };
+  return Amz.readWithClaude(src, String(currency || 'USD').slice(0, 3), Array.isArray(known) ? known.slice(0, 600).map(String) : amzKnown(), filamentClaude);
+});
+
+// ---------- The daily check: new filament orders, and on-order spools that arrived ----------
+// amazon-watch.json: { lastRun, lastOk, lastError, since, newest, seen: { orderId: date }, found: [orders found, waiting
+// for the person: Add / Not filament], arrived: [spool order keys "order|asin" delivered, for the Filament screen],
+// notified: { signin: day } }. It starts from the day it's turned on (older orders: the import on the Filament screen).
+const AMZW_PATH = () => path.join(app.getPath('userData'), 'amazon-watch.json');
+async function amzWatchLoad() { try { return JSON.parse(await fs.readFile(AMZW_PATH(), 'utf8')); } catch { return {}; } }
+async function amzWatchSave(W) { await fs.writeFile(AMZW_PATH(), JSON.stringify(W)); }
+async function amzWatchCfg(cfg) {
+  const a = ((cfg || await readConfig()).amazonWatch) || {};
+  return { enabled: !DEMO && !!a.enabled, store: Amz.store(a.store) ? a.store : 'amazon.com', time: /^([01]\d|2[0-3]):[0-5]\d$/.test(a.time || '') ? a.time : '09:00' };
+}
+const isoDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const minusDays = (day, n) => isoDay(new Date(new Date(day + 'T12:00:00').getTime() - n * 864e5));
+// the most recent time a check was due: today at the set time, or yesterday's if that's still to come
+function amzDueAt(time, now = new Date()) {
+  const [h, m] = time.split(':').map(Number);
+  const t = new Date(now); t.setHours(h, m, 0, 0);
+  if (t > now) t.setDate(t.getDate() - 1);
+  return t.getTime();
+}
+function amzNotify(title, body, open) {
+  try {
+    const { Notification, nativeImage } = require('electron');
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title, body, icon: nativeImage.createFromPath(appIconPath) });
+    n.on('click', () => {
+      if (open === 'signin') return ipcMain.emit('amazon-sign-in-click');
+      if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); win.webContents.send('amazon-watch-open', { what: open }); }
+    });
+    n.show();
+  } catch (e) { logLine('amazon notice:', e.message); }
+}
+ipcMain.on('amazon-sign-in-click', () => {
+  amzWatchCfg().then((c) => { const w = amzWindow(); w.show(); w.focus(); return amzOpen(w, amzListUrl(Amz.store(c.store), new Date().getFullYear(), 0)); }).catch(() => {});
+});
+// spools on order that came from an Amazon order: { orderId: ["order|asin", …] }
+function amzOnOrder() {
+  const out = {};
+  try {
+    const { state } = Fil.load();
+    for (const s of Object.values((state && state.spools) || {})) {
+      if (s && s.status === 'ordered' && typeof s.amz === 'string' && /^[\w-]+\|[A-Z0-9]{10}$/.test(s.amz)) (out[s.amz.split('|')[0]] ||= new Set()).add(s.amz);
+    }
+  } catch {}
+  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, [...v]]));
+}
+function amzInInventory() {
+  try { const { state } = Fil.load(); return new Set(Object.values((state && state.spools) || {}).map((s) => s && s.amz).filter(Boolean)); } catch { return new Set(); }
+}
+let amzWatchRunning = false;
+async function amazonWatchRun(why = 'daily') {
+  const cfg = await amzWatchCfg();
+  if (!cfg.enabled || AMZ.busy || amzWatchRunning) return { skipped: true };
+  amzWatchRunning = true; AMZ.busy = true; AMZ.cancel = false;
+  const W = await amzWatchLoad();
+  const s = Amz.store(cfg.store), today = isoDay();
+  W.lastRun = Date.now();
+  const log = (...a) => logLine('amazon check:', ...a);
+  try {
+    // 1. new orders since the bookmark (a week of overlap: orders can show up late; ones already seen are skipped)
+    const since = W.newest ? minusDays(W.newest, 7) : (W.since || today);
+    const skip = new Set(Object.keys(W.seen || {}));
+    const r = await amazonScan(s, { from: +since.slice(0, 4), to: new Date().getFullYear(), since, skip, background: true }, () => {});
+    W.seen = W.seen || {};
+    for (const [id, d] of Object.entries(r.read)) if (!d || d >= since) W.seen[id] = d || today;
+    const keep = minusDays(today, 60);
+    for (const [id, d] of Object.entries(W.seen)) if (d && d < keep) delete W.seen[id];
+    const dates = Object.values(r.read).filter(Boolean).sort();
+    if (dates.length && (!W.newest || dates[dates.length - 1] > W.newest)) W.newest = dates[dates.length - 1];
+    const have = amzInInventory(), waiting = new Set((W.found || []).flatMap((o) => o.lines.map((l) => `${l.order}|${l.asin}`)));
+    const lines = r.items.filter((l) => !have.has(`${l.order}|${l.asin}`) && !waiting.has(`${l.order}|${l.asin}`));
+    let newOrders = [];
+    if (lines.length) {
+      let read = null;
+      if (await getApiKey()) read = await Amz.readWithClaude(lines, s.cur, amzKnown(), filamentClaude).catch((e) => { log('Claude:', e.message); return null; });
+      const byOrder = new Map();
+      lines.forEach((l) => { if (!byOrder.has(l.order)) byOrder.set(l.order, { order: l.order, date: l.date, store: s.domain, currency: s.cur, lines: [], rows: [], at: Date.now() }); byOrder.get(l.order).lines.push(l); });
+      const rows = read ? read.items : Amz.guessItems(lines);
+      for (const row of rows) { const l = lines[row.line_no]; if (l) byOrder.get(l.order).rows.push({ ...row, line_no: byOrder.get(l.order).lines.indexOf(l), claude: !!read }); }
+      if (read) { const per = read.cost / byOrder.size; for (const o of byOrder.values()) { o.cost = per; o.notes = read.notes; } }
+      newOrders = [...byOrder.values()].filter((o) => o.rows.length);   // Claude found no filament in the others
+      W.found = [...(W.found || []), ...newOrders].slice(-40);
+    }
+    // 2. on-order spools: has Amazon delivered them?
+    const onOrder = amzOnOrder(), arrived = [];
+    for (const [order, keys] of Object.entries(onOrder).slice(0, 15)) {
+      if ((W.arrived || []).some((k) => keys.includes(k))) continue;
+      await amzPause();
+      const d = await amzRead(amzWindow(), amzDetailUrl(s, order), Amz.DETAIL_SCRIPT, () => {}, true).catch((e) => { if (e.message === 'SIGNIN') throw e; return null; });
+      if (d && Amz.DELIVERED.test(d.status || '') && !/arriving|not yet|on the way|out for delivery/i.test((d.status || '').slice(0, 300))) arrived.push(...keys);
+    }
+    if (arrived.length) W.arrived = [...new Set([...(W.arrived || []), ...arrived])];
+    W.lastOk = Date.now(); W.lastError = null;
+    await amzWatchSave(W);
+    log(`${why}: ${r.orders} orders read, ${newOrders.length} new with filament, ${arrived.length} spools arrived`);
+    if (newOrders.length) {
+      const spools = newOrders.reduce((t, o) => t + o.rows.reduce((u, x) => u + (+x.spools || 0), 0), 0);
+      const first = newOrders[0].rows[0];
+      const name = first && first.color && first.claude ? `${first.brand} ${first.line} ${first.color}`.replace(/\s+/g, ' ') : (newOrders[0].lines[0].title || '').slice(0, 70);
+      amzNotify(newOrders.length === 1 ? 'New filament order on Amazon' : `${newOrders.length} new filament orders on Amazon`,
+        `${name}${spools > 1 ? ` and more: ${spools} spools` : ''}. Click to check it and add it to your filament.`, 'found');
+    }
+    if (arrived.length) {
+      let n = arrived.length;
+      try { const { state } = Fil.load(); n = Object.values(state.spools || {}).filter((x) => x && x.status === 'ordered' && arrived.includes(x.amz)).length || n; } catch {}
+      amzNotify('Filament arrived', `Amazon says ${n === 1 ? 'a spool you had on order was' : `${n} spools you had on order were`} delivered. They’re marked as in stock (sealed) on the Filament screen.`, 'arrived');
+    }
+    toWindow('amazon-watch', { found: (W.found || []).length, arrived: (W.arrived || []).length });
+    return { ok: true, read: r.orders, found: newOrders.length, arrived: arrived.length };
+  } catch (err) {
+    const signin = err.message === 'SIGNIN';
+    W.lastError = signin ? 'Amazon needs you to sign in again.' : err.message;
+    await amzWatchSave(W);
+    log(why, 'failed:', err.message);
+    if (signin && (W.notified || {}).signin !== today) {
+      W.notified = { ...(W.notified || {}), signin: today }; await amzWatchSave(W);
+      amzNotify('Sign in to Amazon', 'The daily filament check needs you to sign in to Amazon again. Click to sign in (the app never sees your password).', 'signin');
+    }
+    return { ok: false, error: W.lastError };
+  } finally { amzWatchRunning = false; AMZ.busy = false; toWindow('amazon-watch', {}); }
+}
+// every 10 minutes: due when the last check was before the most recent set time (so also right after the app starts,
+// when it wasn't running at that time)
+let amzTimer = null;
+function startAmazonWatch() {
+  if (amzTimer || DEMO) return;
+  const tick = async () => {
+    const cfg = await amzWatchCfg().catch(() => null);
+    if (!cfg || !cfg.enabled) return;
+    const W = await amzWatchLoad();
+    if (!W.lastRun || W.lastRun < amzDueAt(cfg.time)) amazonWatchRun('daily').catch((e) => logLine('amazon check:', e.message));
+  };
+  setTimeout(tick, 90e3);   // a little after start, not while the app is still opening
+  amzTimer = setInterval(tick, 10 * 60e3);
+}
+ipcMain.handle('amazon-watch-status', async () => {
+  const cfg = await amzWatchCfg(), W = await amzWatchLoad();
+  return { ...cfg, lastRun: W.lastRun || null, lastOk: W.lastOk || null, lastError: W.lastError || null, newest: W.newest || W.since || null,
+    found: (W.found || []).length, arrived: (W.arrived || []).length, running: amzWatchRunning, tour: DEMO || undefined };
+});
+ipcMain.handle('amazon-watch-set', async (_e, patch = {}) => {
+  if (DEMO) throw new Error('not in the tour');
+  const cfg = await readConfig();
+  const a = { ...(cfg.amazonWatch || {}) };
+  if (typeof patch.enabled === 'boolean') a.enabled = patch.enabled;
+  if (Amz.store(patch.store)) a.store = patch.store;
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(patch.time || '')) a.time = patch.time;
+  cfg.amazonWatch = a; await writeConfig(cfg);
+  const W = await amzWatchLoad();
+  if (a.enabled && !W.since && !W.newest) { W.since = isoDay(); await amzWatchSave(W); }   // starts from today
+  return amzWatchCfg(cfg);
+});
+ipcMain.handle('amazon-watch-run', () => amazonWatchRun('now'));
+ipcMain.handle('amazon-watch-found', async () => { const W = await amzWatchLoad(); return { found: W.found || [], arrived: W.arrived || [] }; });
+// the Filament screen dealt with these: { orders: [ids added or dismissed], arrived: [spool keys marked arrived] }
+ipcMain.handle('amazon-watch-done', async (_e, { orders, arrived } = {}) => {
+  const W = await amzWatchLoad();
+  if (Array.isArray(orders)) W.found = (W.found || []).filter((o) => !orders.includes(o.order));
+  if (Array.isArray(arrived)) W.arrived = (W.arrived || []).filter((k) => !arrived.includes(k));
+  await amzWatchSave(W);
+  toWindow('amazon-watch', { found: (W.found || []).length, arrived: (W.arrived || []).length });
+  return true;
+});
 
 // ---------- Spool tags (NFC/RFID): scan a spool's tag, or write your filament to a blank NFC sticker (src/nfc.js)
 // Off until turned on in Settings. Each scan goes to the window, which opens the Filament screen on that spool (or
@@ -3103,6 +3433,7 @@ else {
     // window first; everything slow happens after it is on screen, with progress shown in the app
     createWindow();
     applyNfcConfig().catch(e => logLine('spool tag reader:', e));
+    startAmazonWatch();   // the daily Amazon filament check (off until turned on in Settings)
     applyPhoneConfig().catch(e => logLine('phone access:', e));
     if (!DEMO) { ensureTray(); applyMonitorConfig().catch(e => logLine('print monitor:', e)); }
     buildMenu().catch(e => logLine('menu failed:', e));

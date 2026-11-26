@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.54.0
+- Filament: new **🛒 From Amazon** adds the filament you bought on Amazon, from your order history. The app opens
+  Amazon in its own window and you sign in there yourself: the app never sees or keeps your password, and it only
+  reads your orders (it never buys, cancels or changes anything). Pick your Amazon store (22 countries) and the years
+  to read, or only the orders since your last import. It finds the filament orders (skipping everything else), and
+  Claude reads each product's title and picture for brand, line, color, spool size and how many spools (each color of
+  a multi-color pack; a few cents, with your API key). You check the list before anything is added, as with
+  screenshots. Orders not delivered yet are added as **On order**; ones already in your inventory are marked.
+- New **daily Amazon check** (Settings → Filament → Amazon filament orders, off until you turn it on): once a day at
+  the time you pick (and right after the app starts, if it missed that time) it reads only the orders newer than the
+  last one it checked. A new filament order gets a Windows notice and a badge on **Filament**; Claude has already read
+  it, and you add it or dismiss it. Spools on order from Amazon are switched to in stock (sealed) when Amazon says
+  they were delivered. If Amazon wants you to sign in again, it tells you instead of opening a window.
+- Built into the app; the approach follows the MIT-licensed amazon-order-history-csv-download-mcp project (credited in
+  THIRD-PARTY-NOTICES.md), with no dependency on it.
+
 ## 2.53.0
 - Certificates, **🧵 Filaments used**: **Find** in your filament library works. Its results were there but squeezed
   out of sight under the suggestions. It also finds by several words in any order (“matte beige”) and by color family.

@@ -823,14 +823,18 @@ $('rxSwApply').onclick = async () => {
 
 // ---------- Filament: the built-in filament inventory, shown over the whole window ----------
 // renderer/filament/ runs in an iframe (its own page and styles) and talks to the app through window.advisor here.
-function showFilament(on) {
+function loadFilamentFrame() {
   const view = $('filamentView');
-  if (on && !view.querySelector('iframe')) {
+  if (!view.querySelector('iframe')) {
     const f = document.createElement('iframe');
     f.src = 'filament/index.html'; f.title = 'Filament inventory';
     f.addEventListener('load', () => { try { glossary.attach(f.contentDocument, f); } catch (e) { console.warn('glossary', e); } });
     view.appendChild(f);
   }
+}
+function showFilament(on) {
+  const view = $('filamentView');
+  if (on) loadFilamentFrame();
   document.body.classList.toggle('filament-open', on);
   $('filamentBtn').textContent = on ? 'Back to model' : 'Filament';
   $('filamentBtn').setAttribute('aria-pressed', String(on));
@@ -3374,6 +3378,60 @@ async function saveNfcSettings() {
     openAnywhere: $('nfcAnywhere').checked, writeFormat: $('nfcFormat').value, confirmOverwrite: $('nfcConfirm').checked };
   try { NFC = { ...NFC, ...(await api.nfcSet(patch)) }; } catch (e) { toast(String(e.message || e), 5000); }
 }
+// ---------- Settings: the daily Amazon filament check (main.js amazon-watch-*) ----------
+const amzAgo = (t) => { if (!t) return 'never'; const m = Math.round((Date.now() - t) / 60000); return m < 2 ? 'just now' : m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : new Date(t).toLocaleDateString(); };
+async function renderAmazonSettings() {
+  if (!api.amazonWatchStatus) { $('amzField').classList.add('hidden'); return; }
+  const tour = !!api.tour;
+  $('amzTour').classList.toggle('hidden', !tour);
+  $('amzOn').disabled = tour;
+  const s = (await api.amazonWatchStatus().catch(() => null)) || {};
+  const stores = (await api.amazonStores().catch(() => null)) || [{ domain: 'amazon.com', name: 'United States' }];
+  $('amzStore').replaceChildren(...stores.map(x => new Option(`${x.name} · ${x.domain}`, x.domain)));
+  $('amzStore').value = s.store || 'amazon.com';
+  $('amzTime').value = s.time || '09:00';
+  $('amzOn').checked = !!s.enabled;
+  const showOpts = () => $('amzOpts').classList.toggle('hidden', !$('amzOn').checked || tour);
+  showOpts();
+  $('amzOn').onchange = showOpts;
+  $('amzStatus').textContent = !s.enabled ? (s.lastRun ? `Off. Last checked ${amzAgo(s.lastRun)}.` : 'Off.')
+    : s.running ? 'Checking now…'
+    : `${s.lastError ? `✗ Last check: ${s.lastError} ` : s.lastOk ? `✓ Last checked ${amzAgo(s.lastOk)}. ` : 'Not checked yet: it checks a minute or two after the settings are saved, then every day. '}`
+      + `${s.newest ? `Newest order seen: ${s.newest}. ` : ''}${s.found ? `${s.found} new filament order${s.found === 1 ? '' : 's'} waiting on the Filament screen.` : ''}`;
+  $('amzSignIn').onclick = () => api.amazonSignIn($('amzStore').value).catch(e => toast(cleanErr(e), 5000));
+  $('amzSignOut').onclick = async () => { try { await api.amazonSignOut(); toast('Signed out of Amazon in this app'); } catch (e) { toast(cleanErr(e), 5000); } };
+  $('amzNow').onclick = async () => {
+    await saveAmazonSettings();
+    $('amzStatus').textContent = 'Checking now… (it reads in the background; this can take a minute)';
+    const r = await api.amazonWatchRun().catch(e => ({ ok: false, error: cleanErr(e) }));
+    if (r && r.skipped) $('amzStatus').textContent = 'Turn it on first (or wait: Amazon is being read right now).';
+    else renderAmazonSettings();
+  };
+}
+async function saveAmazonSettings() {
+  if (api.tour || !api.amazonWatchSet) return;
+  try { await api.amazonWatchSet({ enabled: $('amzOn').checked, store: $('amzStore').value, time: $('amzTime').value }); } catch (e) { toast(cleanErr(e), 5000); }
+}
+// new filament orders found: a badge on Filament; a click on the notice opens them. Spools that arrived are marked on
+// the Filament screen, so it's loaded in the background (not shown) when it isn't open yet.
+let amzOpenPending = false;
+window.__takeAmazonOpen = () => { const t = amzOpenPending; amzOpenPending = false; return t; };
+async function amazonWatchBadge() {
+  if (!api.amazonWatchStatus || api.tour) return;
+  const s = await api.amazonWatchStatus().catch(() => null);
+  if (!s) return;
+  if (s.found) $('filamentBtn').dataset.badge = s.found; else delete $('filamentBtn').dataset.badge;
+  if (s.arrived && !$('filamentView').querySelector('iframe')) loadFilamentFrame();
+}
+if (api.onAmazonWatch) {
+  api.onAmazonWatch(() => { amazonWatchBadge(); if ($('settingsDialog').open) renderAmazonSettings(); });
+  api.onAmazonWatchOpen(() => {
+    const f = $('filamentView').querySelector('iframe');
+    showFilament(true);
+    if (f && f.contentWindow && f.contentWindow.__openAmazonFound) { try { f.contentWindow.__openAmazonFound(); } catch {} } else amzOpenPending = true;
+  });
+  setTimeout(amazonWatchBadge, 3000);
+}
 // ---------- Settings: phone access (the Filament library on phones on the home network, src/phone) ----------
 let PH = { devices: [] };
 let phonePairTimer = null;
@@ -3502,6 +3560,7 @@ function openSettings() {
   $('autoUpdate').checked = state.config.autoUpdate !== false;
   $('updateStatus').textContent = UPDATE.info && UPDATE.info.available ? `Version ${UPDATE.info.latest} is available.` : `You have version ${state.config.version || ''}.`;
   renderNfcSettings();
+  renderAmazonSettings();
   renderPhoneSettings();
   renderMonitorSettings();
   if (api.zoomGet) api.zoomGet().then(z => { const sel = $('zoomSelect'); const near = [...sel.options].reduce((a, o) => Math.abs(+o.value - z) < Math.abs(+a.value - z) ? o : a); sel.value = near.value; }).catch(() => {});
@@ -3711,6 +3770,7 @@ $('settingsDialog').addEventListener('close', async () => {
   const before = state.info.available;
   await api.setConfig(patch);
   await saveNfcSettings();
+  await saveAmazonSettings();
   await savePhoneSettings();
   await saveMonitorSettings();
   await loadConfig();

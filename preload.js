@@ -97,6 +97,22 @@ contextBridge.exposeInMainWorld('advisor', {
   filamentClaude: (body) => ipcRenderer.invoke('filament-claude', body),
   filamentFetch: (a) => ipcRenderer.invoke('filament-fetch', a),
   filamentOpenFolder: () => ipcRenderer.invoke('filament-open-folder'),
+  // 🛒 filament from your Amazon orders (main.js "amazon-*")
+  amazonStores: () => ipcRenderer.invoke('amazon-stores'),
+  amazonImport: (o) => ipcRenderer.invoke('amazon-import', o),
+  amazonCancel: () => ipcRenderer.invoke('amazon-cancel'),
+  amazonShow: () => ipcRenderer.invoke('amazon-show'),
+  amazonSignOut: () => ipcRenderer.invoke('amazon-sign-out'),
+  amazonReadItems: (o) => ipcRenderer.invoke('amazon-read-items', o),
+  amazonSignIn: (domain) => ipcRenderer.invoke('amazon-sign-in', domain),
+  amazonWatchStatus: () => ipcRenderer.invoke('amazon-watch-status'),
+  amazonWatchSet: (p) => ipcRenderer.invoke('amazon-watch-set', p),
+  amazonWatchRun: () => ipcRenderer.invoke('amazon-watch-run'),
+  amazonWatchFound: () => ipcRenderer.invoke('amazon-watch-found'),
+  amazonWatchDone: (o) => ipcRenderer.invoke('amazon-watch-done', o),
+  onAmazonWatch: (cb) => { const h = (_e, m) => cb(m); ipcRenderer.on('amazon-watch', h); return () => ipcRenderer.removeListener('amazon-watch', h); },
+  onAmazonWatchOpen: (cb) => { const h = (_e, m) => cb(m); ipcRenderer.on('amazon-watch-open', h); return () => ipcRenderer.removeListener('amazon-watch-open', h); },
+  onAmazonProgress: (cb) => { const h = (_e, m) => cb(m); ipcRenderer.on('amazon-progress', h); return () => ipcRenderer.removeListener('amazon-progress', h); },
   // spool tags (NFC/RFID): scanning and writing. The on… calls return a function that stops listening, so the Filament
   // screen (an iframe that can reload) doesn't pile up listeners.
   nfcStatus: () => ipcRenderer.invoke('nfc-status'),

@@ -17,6 +17,7 @@ AI 3D Print Advisor Studio is licensed under the GNU Affero General Public Licen
 | [OpenTag3D specification](https://opentag3d.info/spec.html) `spec.json` 2.001 (`src/nfc/data/opentag3d-v2.json`, unchanged) | Reading and writing OpenTag3D tags | GPL-3.0 |
 | TigerTag ID database (`src/nfc/data/tigertag.json`, from OpenRFID) | Brand and material names on TigerTag tags | GPL-3.0 (as distributed in OpenRFID) |
 | [ONNX Runtime](https://onnxruntime.ai/) 1.31.1 (`onnxruntime-node`, `onnxruntime-common`; Windows x64 files only), which includes Microsoft's DirectML (`DirectML.dll`) and the DirectX Shader Compiler (`dxcompiler.dll`) under their own licenses | Running the background-removal AI model on this PC | MIT, © Microsoft Corporation |
+| [amazon-order-history-csv-download-mcp](https://github.com/marcusquinn/amazon-order-history-csv-download-mcp) (approach and page selectors, reimplemented in `src/amazon.js`; not included or required) | Reading your Amazon order history for **🛒 From Amazon** and the daily check | MIT, © 2025 Marcus Quinn |
 | [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) lite model (ONNX export [onnx-community/BiRefNet_lite-ONNX](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX), commit `de15b22`). Not shipped: downloaded on first use and checked against its SHA-256 | Removing the background from certificate photos | MIT, © Peng Zheng |
 | Spool tag reader design (PR #10 by BSDGuyShawn: PC/SC login variants, tag test dumps in `test/fixtures/tags`) | Reading spool tags | AGPL-3.0 (contributed to this project) |
 

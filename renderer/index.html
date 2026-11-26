@@ -389,6 +389,18 @@
         </div>
         <p class="hint hidden" id="nfcTour">Spool tags are off in the guided tour.</p>
       </fieldset>
+      <fieldset class="nfc amzwatch" id="amzField">
+        <legend>Amazon filament orders</legend>
+        <label class="check"><input type="checkbox" id="amzOn"> <b>Check my Amazon orders for new filament every day</b></label>
+        <small>The app reads your Amazon order history in its own Amazon window, where you sign in yourself (the app never sees or keeps your password). It only reads: it never buys, cancels or changes anything. It remembers the last order it checked, so each day it only looks at newer orders. When it finds a new filament order, Claude reads the products (brand, line, colors of a bundle, spools; needs your API key, usually a few cents) and you get a Windows notice and a badge on <b>Filament</b>: you check the list and add it, or dismiss it. Spools you added as <b>On order</b> from Amazon are marked as in stock when Amazon says they were delivered. It checks while the app is running (also right after it starts, if it missed the time); for older orders use <b>🛒 From Amazon</b> on the Filament screen.</small>
+        <div class="nfc-opts" id="amzOpts">
+          <label class="field"><span>Amazon store</span><select id="amzStore"></select></label>
+          <label class="field"><span>Check at</span><input type="time" id="amzTime" value="09:00"></label>
+          <div class="row-btns"><button type="button" class="btn" id="amzSignIn" title="Opens Amazon in the app's own window">Sign in to Amazon…</button> <button type="button" class="btn" id="amzNow">Check now</button> <button type="button" class="link" id="amzSignOut">Sign out of Amazon</button></div>
+        </div>
+        <p class="nfc-status" id="amzStatus" aria-live="polite"></p>
+        <p class="hint hidden" id="amzTour">The Amazon check is off in the guided tour.</p>
+      </fieldset>
       <fieldset class="samples hidden" id="sampleField">
         <legend>Filament library</legend>
         <p class="hint" id="sampleText"></p>
