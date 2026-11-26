@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('advisor', {
   cutoutDownload: () => ipcRenderer.invoke('cutout-download'),
   onCutoutProgress: (cb) => { const f = (_e, got, total) => cb(got, total); ipcRenderer.on('cutout-progress', f); return () => ipcRenderer.removeListener('cutout-progress', f); },
   cutoutRun: (rgba) => ipcRenderer.invoke('cutout-run', rgba),
+  cutoutClaudeInfo: () => ipcRenderer.invoke('cutout-claude-info'),
+  cutoutClaude: (photo, cut) => ipcRenderer.invoke('cutout-claude', photo, cut),
   statsJobs: (limit) => ipcRenderer.invoke('stats-jobs', limit),
   onReportCert: (cb) => ipcRenderer.on('report-cert', (_e, id) => cb(id)),
   reportJobs: (limit) => ipcRenderer.invoke('report-jobs', limit),

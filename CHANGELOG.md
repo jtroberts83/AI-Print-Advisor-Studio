@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.43.0
+- Certificates, **Remove the background**: a better automatic cut-out. The AI looks twice (the whole photo, then
+  closer at your model for sharper edges), each time also at a mirror image of the photo, and loose specks and faint
+  haze of background are cleaned up. It takes a little longer (about half a minute the first time).
+- **✨ Let Claude fix it** (with your API key, a few cents): Claude looks at the photo and the cut-out, marks the real
+  object (not reflections, shadows or the table it stands on), the cut-out is trimmed to that, and Claude checks the
+  result. It says when it looks clean, or shows red boxes where background is still left. Counted as “Certificates:
+  Claude photo check” in AI spending.
+- Fix it yourself: **✂ Box around the model** (drag a box: everything outside goes, and the AI looks closer inside),
+  **🧽 Erase** and **🖌 Restore** brushes with a size slider, **↶ Undo** (Ctrl+Z) and **Start over**.
+- Reflections in a glass or glossy table were kept as part of the model (they touch it): a box, Claude or the Erase
+  brush now take them away.
+
 ## 2.42.1
 - Certificates: **Remove the background** could not be turned on the first time: the box unticked itself and the
   button to download the background remover couldn't be clicked. Now the box stays ticked, a blue **⬇ Download the

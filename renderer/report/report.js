@@ -473,7 +473,7 @@
     if (!C.photo || !window.PhotoEdit) return;
     const certEl = $('cert').querySelector('.cert');
     const paper = certEl ? getComputedStyle(certEl).getPropertyValue('--c-bg').trim() || '#ffffff' : '#ffffff';
-    const cutout = api.cutoutRun ? { status: api.cutoutStatus, download: api.cutoutDownload, onProgress: api.onCutoutProgress, run: api.cutoutRun } : null;
+    const cutout = api.cutoutRun ? { status: api.cutoutStatus, download: api.cutoutDownload, onProgress: api.onCutoutProgress, run: api.cutoutRun, claudeInfo: api.cutoutClaudeInfo, claude: api.cutoutClaude } : null;
     const r = await window.PhotoEdit.open({ src: C.original || C.photo, params: C.fields.edit, paper, cutout });
     if (!r) return;
     if (!C.original) C.original = C.photo;

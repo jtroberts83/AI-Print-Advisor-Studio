@@ -35,3 +35,26 @@ test('photo touch up: Auto-fix brightens a dark photo, neutral settings change n
   const white = PE.render(src, { ...PE.DEF, removeBg: true }, mask, [1, 1, 1]);
   assert.deepStrictEqual([...white.data.slice(0, 4)], [255, 255, 255, 255]);
 });
+
+test('photo touch up: clean-up removes loose specks and haze, keeps the model and its soft edge', () => {
+  const w = 100, h = 80, m = new Float32Array(w * h);
+  for (let y = 20; y < 60; y++) for (let x = 20; x < 70; x++) m[y * w + x] = 1;   // the model
+  m[20 * w + 19] = 0.4;                       // its soft edge
+  for (let y = 5; y < 7; y++) for (let x = 85; x < 87; x++) m[y * w + x] = 1;   // a speck of background far away
+  m[75 * w + 5] = 0.04;                       // faint haze
+  m[70 * w + 50] = 0.3;                       // a faint smudge away from the model
+  const t = PE.tidy({ w, h, m });
+  assert.strictEqual(t.m[40 * w + 40], 1, 'model kept');
+  assert.ok(Math.abs(t.m[20 * w + 19] - 0.4) < 1e-6, 'soft edge next to the model kept');
+  assert.strictEqual(t.m[5 * w + 85], 0, 'speck removed');
+  assert.strictEqual(t.m[75 * w + 5], 0, 'haze cleared');
+  assert.strictEqual(t.m[70 * w + 50], 0, 'smudge away from the model cleared');
+});
+
+test('photo touch up: a box cut-out is placed back in the photo; outside the box is background', () => {
+  const sq = { w: 4, h: 4, m: new Float32Array(16).fill(1) };
+  const g = PE.placeMask(sq, [0.5, 0.5, 1, 1], 10, 10);
+  assert.strictEqual(g.m[0], 0); assert.strictEqual(g.m[7 * 10 + 7], 1);
+  const e = PE.applyEdits(Float32Array.from([1, 1, 0]), Float32Array.from([1, 0, 1]), Float32Array.from([0, 0, 1]));
+  assert.deepStrictEqual([...e], [0, 1, 1], 'erase, untouched, restore');
+});

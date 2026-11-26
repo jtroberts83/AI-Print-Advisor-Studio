@@ -212,6 +212,15 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .pe { background: #fff; border-radius: 14px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 0; width: min(1240px, 100%); height: min(820px, 100%); overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
 .pe-view { position: relative; background: #e3e6eb; display: flex; align-items: center; justify-content: center; padding: 14px; min-height: 0; }
 .pe-view canvas { max-width: 100%; max-height: 100%; box-shadow: 0 4px 18px rgba(0,0,0,.2); background: var(--pe-paper, #fff); }   /* the certificate's color, behind a cut-out */
+.pe-view.drawing canvas { cursor: crosshair; touch-action: none; }
+.pe-cursor { position: absolute; border: 2px solid #fff; outline: 1.5px solid #e63946; border-radius: 50%; pointer-events: none; }
+.pe-cursor.restore { outline-color: #2a9d8f; }
+.pe-sel { position: absolute; border: 2px dashed #1d4ed8; background: rgba(29,78,216,.08); pointer-events: none; }
+.pe-marks { position: absolute; inset: 0; pointer-events: none; }
+.pe-mark { position: absolute; border: 3px solid #e63946; border-radius: 6px; box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
+.pe-tools { display: flex; flex-direction: column; gap: 6px; }
+.pe-tools [data-tool][aria-pressed="true"] { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+.pe-how { margin: 0; color: #1d4ed8; }
 .pe-busy { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.7); color: #fff; padding: 5px 12px; border-radius: 999px; font-size: 13px; }
 .pe-side { padding: 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 10px; border-left: 1px solid var(--line); }
 .pe-side h2 { margin: 0; font-size: 18px; }

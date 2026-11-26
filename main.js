@@ -49,7 +49,7 @@ const PR = require('./src/printreport');
 const Spend = require('./src/spend');
 // Which feature an AI call belongs to, for the spending record: the window action that started it.
 const AI_FEATURES = { 'run-claude': 'Recommendations', 'parts-identify': 'Color remix: parts', 'remix-run': 'Color remix: schemes', 'remix-swap-run': 'Color remix: swap colors',
-  'shopping-find': 'Finding filament to buy', 'run-claude-objects': 'Recommendations (all objects)', 'ts-run': 'Troubleshooting', 'filament-claude': 'Filament: screenshots and photos', 'open-path': 'Print names', 'cert-ideas': 'Certificates: AI ideas' };
+  'shopping-find': 'Finding filament to buy', 'run-claude-objects': 'Recommendations (all objects)', 'ts-run': 'Troubleshooting', 'filament-claude': 'Filament: screenshots and photos', 'open-path': 'Print names', 'cert-ideas': 'Certificates: AI ideas', 'cutout-claude': 'Certificates: Claude photo check' };
 {
   const handle = ipcMain.handle.bind(ipcMain);
   ipcMain.handle = (channel, fn) => handle(channel, AI_FEATURES[channel] ? (...a) => Spend.run(AI_FEATURES[channel], () => fn(...a)) : fn);
@@ -2570,6 +2570,7 @@ function certEdit(e) {
     const v = Number(e[k]); if (Number.isFinite(v)) out[k] = Math.max(lo, Math.min(hi, v));
   }
   out.removeBg = e.removeBg === true;
+  if (Array.isArray(e.box) && e.box.length === 4 && e.box.every(v => Number.isFinite(+v) && +v >= 0 && +v <= 1)) out.box = e.box.map(Number);
   out.bg = ['white', 'paper', 'soft'].includes(e.bg) ? e.bg : 'white';
   return out;
 }
@@ -2658,6 +2659,55 @@ Match the occasion and tone of the certificate template. Keep everything family-
 const CERT_OCCASION = { fancy: 'an elegant keepsake', professional: 'a professional or business piece (tone: polished, light humor at most)', kids: 'a toy for a child (tone: playful, simple words)',
   christmas: 'a Christmas gift', birthday: 'a birthday gift', rainbow: 'a fun, colorful gift' };
 const CERT_EST = { inTok: 4500, outTok: 900 };
+// ✨ Let Claude fix it (Touch up photo → Remove the background): Claude can't draw a cut-out, but it can see what the
+// real object is. It gets the photo and the current cut-out (on bright green) and returns a box around the object
+// alone (no reflections, shadows or table), whether the cut-out is clean, and where background is left.
+const CUTOUT_BOX = { type: 'object', additionalProperties: false, required: ['x0', 'y0', 'x1', 'y1'],
+  properties: { x0: { type: 'integer' }, y0: { type: 'integer' }, x1: { type: 'integer' }, y1: { type: 'integer' } } };
+const CUTOUT_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['what_it_is', 'model_box', 'clean', 'leftovers', 'advice'],
+  properties: {
+    what_it_is: { type: 'string', description: 'The object, in a few words.' },
+    model_box: { ...CUTOUT_BOX, description: 'The tightest box around the real object only, in the first image, as 0-1000 of its width and height.' },
+    clean: { type: 'boolean', description: 'True if the cut-out (second image) has no background left and nothing of the object missing.' },
+    leftovers: { type: 'array', description: 'Boxes (0-1000) around background still showing in the cut-out, or parts of the object missing. Empty if clean.', items: { type: 'object', additionalProperties: false, required: ['x0', 'y0', 'x1', 'y1', 'what'], properties: { ...CUTOUT_BOX.properties, what: { type: 'string' } } } },
+    advice: { type: 'string', description: 'One short sentence for the user about the cut-out.' },
+  },
+};
+const CUTOUT_SYSTEM = `You check background removal for a photo of a 3D printed model that goes on a printable certificate.
+You get two images of the same size: 1) the original photo, 2) the current cut-out, where everything the background remover removed is pure bright green.
+Find the physical 3D printed object itself (including any stand or base that is part of the print). Reflections of it (for example in a glass or glossy table), shadows, the table or surface it sits on, cables, walls and other things are background, even when they touch the object.
+Give model_box: the tightest box around the object alone in image 1, as integers from 0 to 1000 (0,0 is the top left; 1000 is the full width or height). Make it tight but don't cut off any part of the object.
+Then look at image 2: set clean to true only if no background is left and no part of the object is missing. Otherwise list leftovers as boxes (0-1000) and say what each is.
+advice: one short, friendly sentence for the user.`;
+const CUTOUT_EST = { inTok: 3800, outTok: 350 };
+ipcMain.handle('cutout-claude-info', async () => {
+  const cfg = await readConfig(), model = cfg.model || DEFAULT_MODEL;
+  return { hasKey: !!(await getApiKey()), usd: Spend.costOf(model, { input_tokens: CUTOUT_EST.inTok, output_tokens: CUTOUT_EST.outTok }), tour: DEMO };
+});
+ipcMain.handle('cutout-claude', async (_e, photo, cut) => {
+  if (DEMO) throw new Error('The tour doesn’t ask the AI.');
+  if (!(await getApiKey())) throw new Error('Add your Anthropic API key in Settings (main window) to let Claude check the photo.');
+  const a = typeof photo === 'string' && PHOTO_DATA.exec(photo), b = typeof cut === 'string' && PHOTO_DATA.exec(cut);
+  if (!a || !b || a[2].length > 6e6 || b[2].length > 6e6) throw new Error('Bad photo.');
+  const cfg = await readConfig(), model = cfg.model || DEFAULT_MODEL;
+  const content = [
+    { type: 'image', source: { type: 'base64', media_type: `image/${a[1]}`, data: a[2] } }, { type: 'text', text: 'Image 1: the original photo.' },
+    { type: 'image', source: { type: 'base64', media_type: `image/${b[1]}`, data: b[2] } }, { type: 'text', text: 'Image 2: the current cut-out (removed parts are bright green).' },
+  ];
+  const data = await filamentClaude({ model, max_tokens: 3000, system: CUTOUT_SYSTEM, output_config: { format: { type: 'json_schema', schema: CUTOUT_SCHEMA } }, messages: [{ role: 'user', content }] });
+  if (data.stop_reason === 'refusal') throw new Error('Claude declined to look at this photo.');
+  let r = null;
+  try { r = JSON.parse((data.content || []).filter(x => x.type === 'text').map(x => x.text).join('')); } catch {}
+  if (!r || !r.model_box) throw new Error('Claude didn’t send an answer. Try again.');
+  const f = (v) => Math.max(0, Math.min(1, (Number(v) || 0) / 1000));
+  const rect = (o) => { const x0 = f(o.x0), y0 = f(o.y0), x1 = f(o.x1), y1 = f(o.y1); return [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)]; };
+  return {
+    what: certText(r.what_it_is, 120), box: rect(r.model_box), clean: r.clean === true,
+    leftovers: (Array.isArray(r.leftovers) ? r.leftovers : []).slice(0, 12).map(o => ({ box: rect(o), what: certText(o.what, 80) })),
+    advice: certText(r.advice, 240), usd: Spend.costOf(model, data.usage || {}),
+  };
+});
 // background removal for certificate photos, on this PC (src/cutout.js): the model downloads once (asked first)
 let cutoutObj = null;
 const Cut = () => (cutoutObj ||= new (require('./src/cutout').Cutout)(path.join(app.getPath('userData'), 'models')));
