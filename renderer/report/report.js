@@ -279,6 +279,14 @@
     rainbow: { label: 'Rainbow', kicker: 'Officially 3D printed', title: 'Certificate of Awesomeness', intro: 'Behold!',
       born: 'was printed into existence on', to: 'To', from: 'From', seal: ['100%', 'AWESOME'], ring: 'COLORFUL · CREATIVE · ONE OF A KIND · ' },
   };
+  // the words under the From line: the template's own ("Created by"…), one of these, or your own (fields.fromLabel)
+  const FROM_WORDS = [
+    ['Love', ['Love', 'With love from', 'Love always', 'All my love', 'Lots of love', 'Love you', 'XOXO', 'Hugs and kisses', 'With love and hugs', 'Made with love by']],
+    ['Friendly', ['From', 'Your friend', 'Hugs from', 'Cheers', 'Fondly', 'Best wishes from', 'Thank you from', 'With thanks from', 'Gifted by']],
+    ['Holidays', ['Merry Christmas from', 'Happy holidays from', 'Your Secret Santa', 'Happy birthday from', 'Congratulations from']],
+    ['Formal', ['Sincerely', 'Yours truly', 'Created by', 'Made by', 'Printed by', 'Designed and printed by']],
+  ];
+  const fromWords = (tp) => (C.fields && C.fields.fromLabel) || tp.from;
   TEMPLATES.kids.letters = ['#ff4d6d', '#fb5607', '#f4a100', '#06b88a', '#118ab2', '#8338ec'];
   TEMPLATES.rainbow.letters = ['#e63946', '#f4a261', '#d4a93a', '#2a9d8f', '#457b9d', '#9b5de5'];
   // each letter its own color (a gradient clipped to the text prints with a box around it)
@@ -359,7 +367,7 @@
       <p class="small">Was this model printed in several prints (plates)? Tick the other prints that are part of it. Their printing time, filament, colors and materials are added to the certificate; the height shows the tallest piece (pieces don’t all stack).</p>
       <label class="psearch">Find a print by name <input type="search" id="cPlateQ" placeholder="any part of its name" value="${esc(C.plateQ || '')}"></label>
       <div id="plateLists">${plateLists(same, near, found, lost, row)}</div>
-      <div class="row"><button class="btn primary" id="cPlatesDone">Done</button></div></div>`;
+    </div>`;
   }
 
   // a stable pseudo-random sequence per print, so decorations don't jump around between renders
@@ -590,10 +598,10 @@
   }
   function filsHtml() {
     const list = filsOf();
-    const head = `<div class="row ccolors"><span class="lbl">Filaments</span>
+    const head = `<div class="row ccolors fchips">
       ${list.map((x, i) => `<span class="fchip"><span class="sw" style="background:${esc(x.hex)}"></span>${esc(x.name)}${x.type ? ` <span class="muted">${esc(x.type)}</span>` : ''}<button type="button" class="cdel" data-fdel="${i}" title="Take this one off the list" aria-label="Remove ${esc(x.name)}">×</button></span>`).join('')}
-      <button type="button" class="btn${C.filOpen ? ' on' : ''}" id="cFilOpen" aria-expanded="${!!C.filOpen}" title="Pick the filaments this print was made with from your filament library; they are listed under the photo">🧵 ${list.length ? 'Add or change…' : 'List the filaments used…'}</button>
-      ${list.length ? '<button type="button" class="link" id="cFilClear">Remove the list</button>' : '<span class="muted small">Shows “Filaments used” under the photo.</span>'}</div>`;
+      <button type="button" class="btn${C.filOpen ? ' on' : ''}" id="cFilOpen" aria-expanded="${!!C.filOpen}" title="Pick the filaments this print was made with from your filament library; they are listed under the photo">${list.length ? 'Add or change…' : 'List the filaments used…'}</button>
+      ${list.length ? '<button type="button" class="link" id="cFilClear">Remove the list</button>' : '<span class="muted small">Listed under the photo as “Filaments used”.</span>'}</div>`;
     if (!C.filOpen) return head;
     if (!C.lib) { api.certFilaments().then((l) => { C.lib = l || []; if (C.filOpen) certControls(); }).catch(() => { C.lib = []; certControls(); }); return head + '<div class="platebox"><p class="muted small">Reading your filament library…</p></div>'; }
     const sug = filSuggestions();
@@ -670,10 +678,10 @@
   }
   function colorsHtml() {
     const list = colorList(), own = Array.isArray(C.fields.colors);
-    return `<div class="row ccolors"><span class="lbl">Colors</span>
+    return `<div class="row ccolors">
       ${list.map((c, i) => `<span class="cedit"><input type="color" data-ci="${i}" value="${esc(c)}" title="Click to change this color" aria-label="Color ${i + 1}"><button type="button" class="cdel" data-cdel="${i}" title="Remove this color (one the print didn’t really use)" aria-label="Remove color ${i + 1}">×</button></span>`).join('')}
-      ${list.length < 16 ? `<button type="button" class="btn" id="cColAdd" title="Add a color">+ Add</button><button type="button" class="btn" id="cColPick" ${C.photo || R.thumbs.get(C.job.id) ? '' : 'disabled'} title="Click a part of the photo to add its color: the color as it really printed">💧 From the photo</button>` : ''}
-      ${own ? '<button type="button" class="link" id="cColReset">Use the print’s colors</button>' : '<span class="muted small">From the print. Click one to change it, × to remove it.</span>'}</div>`;
+      ${list.length < 16 ? `<button type="button" class="btn" id="cColAdd" title="Add a color">+ Add</button><button type="button" class="btn" id="cColPick" ${C.photo || R.thumbs.get(C.job.id) ? '' : 'disabled'} title="Click a part of the photo to add its color: the color as it really printed">💧 From the photo</button>` : ''}</div>
+      <div class="row">${own ? '<button type="button" class="link" id="cColReset">Use the print’s colors</button>' : '<span class="muted small">The print’s colors. Click one to change it, × to remove it.</span>'}</div>`;
   }
   // "Snapmaker U1 #2", "Snapmaker U1 #1" → "Snapmaker U1 #1 & #2"
   function samePrefix(names) {
@@ -710,7 +718,7 @@
         <footer class="cfoot">
           <div class="party"><div class="val">${esc(f.to || '')}</div><div class="lbl">${esc(tp.to)}</div></div>
           ${sealSvg(tp, year)}
-          <div class="party"><div class="val">${esc(f.from || '')}</div><div class="lbl">${esc(tp.from)}</div></div>
+          <div class="party"><div class="val">${esc(f.from || '')}</div><div class="lbl">${esc(fromWords(tp))}</div></div>
         </footer>
         <div class="cno">${esc(no)} · ${esc(files)}</div>
       </div></div>`;
@@ -795,12 +803,11 @@
   }
   function fontsHtml() {
     const custom = FONT_GROUPS.some((g) => { const f = fontOf(g.k); return f.family || f.sized; });
-    const head = `<div class="row"><button class="btn${custom ? ' on' : ''}" id="cFonts" aria-expanded="${!!C.fontsOpen}" title="Change the font and size of each kind of text">🔤 Fonts and sizes${custom ? ' (changed)' : ''}</button>${custom ? '<button class="link" id="cFontsReset">Use the template’s fonts</button>' : ''}</div>`;
-    if (!C.fontsOpen) return head;
+    const head = custom ? '<div class="row"><button class="link" id="cFontsReset">Use the template’s fonts and sizes</button></div>' : '';
     const list = installedFonts();
     return head + `<div class="fontbox">${FONT_GROUPS.map((g) => {
-      const f = fontOf(g.k), { lo, hi, b } = ptRange(g.k), pt = ptRound(b * f.scale), tp = TEMPLATES[tplKey(C.fields.template)];
-      const label = g.k === 'to' ? tp.to : g.k === 'from' ? tp.from : g.label;   // the template's own words ("Presented to"…)
+      const f = fontOf(g.k), { lo, hi, b } = ptRange(g.k), pt = ptRound(b * f.scale);
+      const label = g.label;
       return `<div class="frow"><span class="flbl">${esc(label)}</span>
         <select data-ffam="${g.k}" aria-label="${esc(label)} font"><option value="">Template’s font</option>${list.map((n) => `<option value="${esc(n)}" style="font-family:'${esc(n)}'" ${n === f.family ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
         <input type="range" min="${lo}" max="${hi}" step="0.5" value="${pt}" data-fsize="${g.k}" aria-label="${esc(label)} size in points">
@@ -873,51 +880,77 @@
   }
   function fitCert() {
     const el = $('cert').querySelector('.cert'); if (!el) return;
-    const w = el.offsetWidth, avail = $('cert').clientWidth - 32;
-    $('cert').style.setProperty('--z', String(Math.min(1, avail / w)));
+    const w = el.offsetWidth, h = el.offsetHeight, avail = $('cert').clientWidth - 32;
+    const side = getComputedStyle($('certControls')).position === 'fixed';   // the options beside it: the whole page in view
+    $('cert').style.setProperty('--z', String(side ? Math.min(2, avail / w, (innerHeight - 48) / h) : Math.min(1, avail / w)));   // beside the panel it may grow to fill the space
   }
   addEventListener('resize', () => { if (C.job) fitCert(); });
 
+  // The certificate's options: a panel beside the certificate (above it in a narrow window). The things changed
+  // most (template, words, photo) are open; colors, filaments, fonts and multi-plate fold to a one-line summary.
+  // Which sections are open is remembered.
+  const SEC_OPEN = { style: true, words: true, photo: true, colors: false, fils: false, fonts: false, plates: false };
+  const secState = () => { try { return JSON.parse(localStorage.getItem('aipa.certSecs') || '{}') || {}; } catch { return {}; } };
+  const secOpen = (k) => { const v = secState()[k]; return typeof v === 'boolean' ? v : SEC_OPEN[k]; };
+  const setSec = (k, v) => { try { const all = secState(); all[k] = v; localStorage.setItem('aipa.certSecs', JSON.stringify(all)); } catch {} };
+  function sec(k, title, summary, body) {
+    const open = secOpen(k);
+    return `<section class="csec${open ? ' open' : ''}"><button type="button" class="csec-h" data-sect="${k}" aria-expanded="${open}">
+      <span class="chev" aria-hidden="true"></span><span class="csec-t">${title}</span><span class="csec-s">${open ? '' : summary}</span></button>
+      ${open ? `<div class="csec-b">${body()}</div>` : ''}</section>`;
+  }
+  const dots = (list) => `<span class="dots">${list.slice(0, 10).map((c) => `<span class="sw" style="background:${esc(c)}"></span>`).join('')}${list.length > 10 ? `<span class="muted"> +${list.length - 10}</span>` : ''}</span>`;
   function certControls() {
-    const f = C.fields, cur = tplKey(f.template);
+    const f = C.fields, cur = tplKey(f.template), tp = TEMPLATES[cur];
     const waiting = C.phone.filter((p) => p.purpose === 'cert' && p.state === 'waiting').slice(0, 6);
+    const short = (v, n = 18) => { const t = String(v || '').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+    const words = [short(f.name) || nameOf(C.job), f.to && `to ${short(f.to)}`, f.from && `from ${short(f.from)}`].filter(Boolean).join(' · ');
+    const nPlates = partsOf().length - 1, fonted = FONT_GROUPS.some((g) => { const x = fontOf(g.k); return x.family || x.sized; });
     $('certControls').innerHTML = `
-      <div class="row"><button class="btn" id="certBack">← Back to the report</button><span class="ctitle">Certificate for <b>${esc(nameOf(C.job))}</b></span>
-        <span class="grow"></span><button class="btn" id="certPrint" title="Opens the certificate in your PDF viewer with a print preview; print from there">🖨 Print…</button><button class="btn primary" id="certPdf">Save as PDF…</button></div>
-      <div class="row tpls" role="radiogroup" aria-label="Template">${Object.entries(TEMPLATES).map(([k, v]) =>
-        `<label class="tpl t-${esc(k)} ${k === cur ? 'on' : ''}"><input type="radio" name="tpl" value="${esc(k)}" ${k === cur ? 'checked' : ''}><span class="dot"></span>${esc(v.label)}</label>`).join('')}</div>
-      <div class="row">
-        <label class="grow">Name <input id="cName" type="text" maxlength="80" placeholder="${esc(nameOf(C.job))}" value="${esc(f.name || '')}"></label>
-        <label class="grow">${esc(TEMPLATES[cur].to)} <input id="cTo" type="text" maxlength="80" value="${esc(f.to || '')}"></label>
-        <label class="grow">${esc(TEMPLATES[cur].from)} <input id="cFrom" type="text" maxlength="80" value="${esc(f.from || '')}"></label>
+      <div class="chdr">
+        <div class="row"><button class="btn" id="certBack" title="Back to the print report">← Report</button><span class="grow"></span>
+          <button class="btn" id="certPrint" title="Opens the certificate in your PDF viewer with a print preview; print from there">🖨 Print…</button><button class="btn primary" id="certPdf">Save as PDF…</button></div>
+        <div class="ctitle">Certificate for <b>${esc(nameOf(C.job))}</b></div>
+        <div class="status" id="cStatus" role="status" aria-live="polite"></div>
       </div>
-      <div class="row"><label class="grow">Message (optional) <textarea id="cMsg" rows="2" maxlength="240" placeholder="e.g. Merry Christmas! Made just for you.">${esc(f.message || '')}</textarea></label>
-        <label title="Weigh the finished model if you can (a kitchen scale works). Grams if you type just a number. Left empty, it isn’t on the certificate.">Weight (optional) <input id="cWeight" type="text" maxlength="30" size="10" placeholder="e.g. 142" value="${esc(f.weight || '')}"></label></div>
-      <div class="row">
-        <span class="lbl">Photo</span>
-        <label class="btn">🖼 Choose a photo…<input id="cFile" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
-        <button class="btn" id="cPhone">📱 ${C.qr ? 'Hide the QR code' : 'Take one with your phone'}</button>
-        ${C.camera.length ? `<button class="btn" id="cCam" title="The Print Monitor’s photo from the printer’s camera, taken at 99 %">📷 Printer camera photo</button>` : ''}
-        ${C.photo ? `<button class="btn" id="cTouch" title="Rotate, straighten, exposure, contrast, colors, sharpening, background removal: preview first, then use it">🎨 Touch up / rotate photo</button>` : ''}
-        ${C.original ? `<button class="link" id="cUndo">Undo touch up</button>` : ''}
-        ${C.photo ? `<button class="link" id="cNoPhoto">Use the slicer picture instead</button>` : ''}
-      </div>
-      ${colorsHtml()}
-      ${filsHtml()}
-      ${fontsHtml()}
-      ${(() => {
-        const n = partsOf().length - 1;
-        const hint = !n && looksMulti(C.job) ? '<span class="muted small">This looks like part of a bigger print (other prints have a similar name).</span>' : '';
-        return `<div class="row plates"><button class="btn${n ? ' on' : ''}" id="cPlates" aria-expanded="${!!C.platesOpen}" title="A model printed in several prints (plates): add their times, filament and colors together">🧩 ${n ? `Combined with ${n} other print${n > 1 ? 's' : ''}: change…` : 'Multi-plate print? Combine prints…'}</button>${hint}</div>
-        ${C.platesOpen ? platesHtml() : ''}`;
-      })()}
-      ${ideasHtml()}
-      ${waiting.length ? `<div class="row phonewait"><span class="muted small">From your phone (click to use):</span>${waiting.map((p) => `<button class="pw" data-pw="${esc(p.id)}" title="${esc(new Date(p.at).toLocaleString())} · ${esc(p.device)}"><img data-pthumb="${esc(p.id)}" alt="Phone photo"></button>`).join('')}</div>` : ''}
-      <div id="cQr" class="qr ${C.qr ? '' : 'hidden'}"></div>
-      <div class="status" id="cStatus" role="status" aria-live="polite"></div>`;
+      ${sec('style', 'Template', `<span class="tpl mini t-${esc(cur)}"><span class="dot"></span>${esc(tp.label)}</span>`, () => `<div class="tpls" role="radiogroup" aria-label="Template">${Object.entries(TEMPLATES).map(([k, v]) =>
+        `<label class="tpl t-${esc(k)} ${k === cur ? 'on' : ''}"><input type="radio" name="tpl" value="${esc(k)}" ${k === cur ? 'checked' : ''}><span class="dot"></span>${esc(v.label)}</label>`).join('')}</div>`)}
+      ${sec('words', 'Words', esc(words), () => `<div class="cform">
+        <label for="cName">Name</label><input id="cName" type="text" maxlength="80" placeholder="${esc(nameOf(C.job))}" value="${esc(f.name || '')}">
+        <label for="cTo">To</label><input id="cTo" type="text" maxlength="80" placeholder="Name (printed above “${esc(tp.to)}”)" value="${esc(f.to || '')}">
+        <label for="cFrom">From</label>${fromHtml(cur)}
+        <label for="cMsg">Message</label><textarea id="cMsg" rows="2" maxlength="240" placeholder="Optional, e.g. Merry Christmas! Made just for you.">${esc(f.message || '')}</textarea>
+        <label for="cWeight">Weight</label><span class="wrow"><input id="cWeight" type="text" maxlength="30" size="10" placeholder="e.g. 142" value="${esc(f.weight || '')}"><span class="muted small" title="Weigh the finished model if you can (a kitchen scale works). Left empty, it isn’t on the certificate.">Optional. Grams if just a number.</span></span>
+      </div>${ideasHtml()}`)}
+      ${sec('photo', 'Photo', C.photo ? 'Your photo' : 'The slicer’s picture', () => `
+        <div class="row pbtns">
+          <label class="btn">🖼 Choose…<input id="cFile" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
+          <button class="btn${C.qr ? ' on' : ''}" id="cPhone">📱 ${C.qr ? 'Hide QR code' : 'From your phone'}</button>
+          ${C.camera.length ? `<button class="btn" id="cCam" title="The Print Monitor’s photo from the printer’s camera, taken at 99 %">📷 Printer camera</button>` : ''}
+          ${C.photo ? `<button class="btn" id="cTouch" title="Rotate, straighten, exposure, contrast, colors, sharpening, background removal: preview first, then use it">🎨 Touch up…</button>` : ''}
+        </div>
+        ${C.original || C.photo ? `<div class="row">${C.original ? '<button class="link" id="cUndo">Undo touch up</button>' : ''}${C.photo ? '<button class="link" id="cNoPhoto">Use the slicer picture instead</button>' : ''}</div>` : ''}
+        ${waiting.length ? `<div class="row phonewait"><span class="muted small">From your phone (click to use):</span>${waiting.map((p) => `<button class="pw" data-pw="${esc(p.id)}" title="${esc(new Date(p.at).toLocaleString())} · ${esc(p.device)}"><img data-pthumb="${esc(p.id)}" alt="Phone photo"></button>`).join('')}</div>` : ''}
+        <div id="cQr" class="qr ${C.qr ? '' : 'hidden'}"></div>`)}
+      <div class="csub">More options</div>
+      ${sec('colors', 'Colors', `${dots(colorList())}<span>${Array.isArray(f.colors) ? 'changed' : ''}</span>`, colorsHtml)}
+      ${sec('fils', 'Filaments used', filsOf().length ? `${dots(filsOf().map((x) => x.hex))}<span>${filsOf().length} listed</span>` : 'Not listed', filsHtml)}
+      ${sec('fonts', 'Fonts and sizes', fonted ? 'Changed' : 'The template’s', fontsHtml)}
+      ${sec('plates', 'Multi-plate print', nPlates ? `Combined with ${nPlates} other print${nPlates > 1 ? 's' : ''}` : looksMulti(C.job) ? 'Looks like part of a bigger print' : 'One print', platesHtml)}`;
     for (const img of $('certControls').querySelectorAll('[data-pthumb]')) api.tsPhotoData(img.dataset.pthumb).then((u) => { if (u) img.src = u; }).catch(() => {});
     if (C.qr) showQr();
     fontRows();
+  }
+  // From: the name, and the words under it (a list, or your own)
+  function fromHtml(cur) {
+    const tp = TEMPLATES[cur], w = C.fields.fromLabel || '', listed = FROM_WORDS.some(([, l]) => l.includes(w));
+    const own = C.fromOwn || (w && !listed);
+    const opt = (v, t) => `<option value="${esc(v)}" ${!own && v === w ? 'selected' : ''}>${esc(t)}</option>`;
+    return `<span class="fromrow"><select id="cFromWord" aria-label="Words under the From name" title="The words printed under the From name: “Love”, “With love from”, “XOXO”… or your own">
+        ${opt('', `${tp.from} (template)`)}${FROM_WORDS.map(([g, l]) => `<optgroup label="${esc(g)}">${l.filter((x) => x !== tp.from).map((x) => opt(x, x)).join('')}</optgroup>`).join('')}
+        <option value="__own" ${own ? 'selected' : ''}>Your own words…</option></select>
+      ${own ? `<input id="cFromOwn" type="text" maxlength="40" placeholder="e.g. Love, Grandma’s helper" aria-label="Your own words under the From name" value="${esc(w)}">` : ''}
+      <input id="cFrom" type="text" maxlength="80" aria-label="From (name)" placeholder="Name" value="${esc(C.fields.from || '')}"></span>`;
   }
   const cstatus = (t) => { const el = $('cStatus'); if (el) el.textContent = t; };
 
@@ -1040,7 +1073,8 @@
 
   async function openCert(jobId) {
     const j = R.jobs.find((x) => x.id === jobId); if (!j) return;
-    Object.assign(C, { job: j, fields: {}, photo: null, original: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false, platesOpen: false, plateQ: '', ideas: ideasStore()[j.id] || null, ideasErr: '', ideasBusy: false });
+    Object.assign(C, { job: j, fields: {}, photo: null, original: null, camera: [], detail: R.detail.get(j.id) || null, openedAt: Date.now(), qr: false, plateQ: '', ideas: ideasStore()[j.id] || null, ideasErr: '', ideasBusy: false });
+    C.fromOwn = false;
     try { const g = await api.certGet(j.id); C.fields = g.fields || {}; C.photo = g.photo; C.original = g.original || null; C.mask = g.mask || null; C.camera = g.camera || []; } catch (e) { status(String(e.message || e)); }
     if (!C.ai && api.certAiInfo) C.ai = await api.certAiInfo().catch(() => null);
     try { C.phone = await api.tsPhotosList(); } catch { C.phone = []; }
@@ -1072,8 +1106,6 @@
       if (t.checked) set.add(t.dataset.plate); else set.delete(t.dataset.plate);
       f.combine = [...set]; saveFields(); loadDetails(partsOf()); renderCert();
       { const box = $('plateLists'), y = box && box.parentElement.scrollTop; if (box) { const tmp = document.createElement('div'); tmp.innerHTML = platesHtml(); box.innerHTML = tmp.querySelector('#plateLists').innerHTML; box.parentElement.scrollTop = y; } }   // the week window follows what's ticked
-      const btn = $('cPlates'), n = partsOf().length - 1;
-      if (btn) btn.innerHTML = `🧩 ${n ? `Combined with ${n} other print${n > 1 ? 's' : ''}: change…` : 'Multi-plate print? Combine prints…'}`;
       return;
     }
     if (t.dataset.ffam != null || t.dataset.fsize != null) {   // a font or size: only the certificate is redrawn (the slider keeps moving)
@@ -1098,7 +1130,7 @@
       if (!$('cColReset')) { const tmp = document.createElement('div'); tmp.innerHTML = colorsHtml(); const old = $('certControls').querySelector('.ccolors .muted'); if (old) old.replaceWith(tmp.querySelector('#cColReset')); }
       return;
     }
-    if (t.id === 'cName') f.name = t.value; else if (t.id === 'cTo') f.to = t.value; else if (t.id === 'cFrom') f.from = t.value;
+    if (t.id === 'cName') f.name = t.value; else if (t.id === 'cTo') f.to = t.value; else if (t.id === 'cFrom') f.from = t.value; else if (t.id === 'cFromOwn') f.fromLabel = t.value.trim();
     else if (t.id === 'cMsg') f.message = t.value; else if (t.id === 'cWeight') f.weight = t.value; else return;
     saveFields(); renderCert();
   });
@@ -1106,18 +1138,25 @@
     const t = e.target;
     if (t.id === 'cSayLen') { try { localStorage.setItem('aipa.sayLen', t.value); } catch {} return; }
     if (t.name === 'tpl') { C.fields.template = t.value; saveFields(); certControls(); renderCert(); }
+    else if (t.id === 'cFromWord') {
+      C.fromOwn = t.value === '__own';
+      if (!C.fromOwn) C.fields.fromLabel = t.value;
+      saveFields(); certControls(); renderCert();
+      if (C.fromOwn) $('cFromOwn')?.focus();
+    }
     else if (t.dataset.ffam != null || t.dataset.fsize != null) certControls();   // let go of a slider / picked a font: "(changed)" and the reset link
     else if (t.id === 'cFile' && t.files[0]) { try { cstatus('Adding the photo…'); await setPhoto(await shrinkPhoto(t.files[0])); cstatus('✓ Photo added.'); } catch (err) { cstatus(err.message || String(err)); } }
   });
   $('certControls').addEventListener('click', async (e) => {
     const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.sect) { const k = b.dataset.sect; setSec(k, !secOpen(k)); certControls(); return; }
     if (b.id === 'certBack') closeCert();
     else if (b.id === 'cPhone') { C.qr = !C.qr; certControls(); }
     else if (b.id === 'cCam') { const u = await api.certCameraPhoto(C.job.id, C.camera[0].id).catch(() => null); if (u) { await setPhoto(u); cstatus('✓ The printer camera’s photo is on the certificate.'); } else cstatus('That camera photo isn’t on this PC anymore.'); }
     else if (b.id === 'cNoPhoto') { await setPhoto(null); }
     else if (b.id === 'cTouch') touchUp();
     else if (b.id === 'cFilOpen') { C.filOpen = !C.filOpen; certControls(); }
-    else if (b.id === 'cFilPick') startPick((hex) => { C.filPick = hex; C.filOpen = true; certControls(); const f = $('cFilPick'); if (f) f.scrollIntoView({ block: 'center' }); });
+    else if (b.id === 'cFilPick') startPick((hex) => { C.filPick = hex; C.filOpen = true; setSec('fils', true); certControls(); const f = $('cFilPick'); if (f) f.scrollIntoView({ block: 'center' }); });
     else if (b.id === 'cColPick') startPick((hex) => { const list = colorList(); if (list.length < 16 && !list.includes(hex)) { C.fields.colors = [...list, hex]; saveFields(); certControls(); renderCert(); } const c = $('cColPick'); if (c) c.scrollIntoView({ block: 'center' }); });
     else if (b.id === 'cFilDone') { C.filOpen = false; certControls(); }
     else if (b.id === 'cFilClear') { delete C.fields.filaments; saveFields(); certControls(); renderCert(); }
@@ -1128,11 +1167,8 @@
     else if (b.id === 'cUndo') undoTouchUp();
     else if (b.dataset.cdel != null) { const list = [...colorList()]; list.splice(Number(b.dataset.cdel), 1); C.fields.colors = list; saveFields(); certControls(); renderCert(); }
     else if (b.id === 'cColAdd') { C.fields.colors = [...colorList(), '#888888']; saveFields(); certControls(); renderCert(); const ins = $('certControls').querySelectorAll('[data-ci]'); const last = ins[ins.length - 1]; if (last) last.click(); }
-    else if (b.id === 'cFonts') { C.fontsOpen = !C.fontsOpen; certControls(); }
     else if (b.id === 'cFontsReset') { delete C.fields.fonts; saveFields(); renderCert(); certControls(); }
     else if (b.id === 'cColReset') { delete C.fields.colors; saveFields(); certControls(); renderCert(); }
-    else if (b.id === 'cPlates') { C.platesOpen = !C.platesOpen; certControls(); }
-    else if (b.id === 'cPlatesDone') { C.platesOpen = false; certControls(); }
     else if (b.id === 'cIdeas') { setIdeasShut(false); askIdeas(); }
     else if (b.id === 'cIdeasFold') { setIdeasShut(!ideasShut()); certControls(); }
     else if (b.dataset.name != null) { C.fields.name = b.dataset.name; $('cName').value = b.dataset.name; saveFields(); renderCert(); }

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.59.0
+- **Certificate: pick the words under the From name.** Next to From, choose the template's own words (such as
+  *Created by*) or **Love**, **With love from**, **Love always**, **XOXO**, **Hugs and kisses**, **Your friend**,
+  **Merry Christmas from**, **Your Secret Santa**, **Sincerely** and more, or **Your own words…** to type anything.
+  Saved with the certificate.
+- **The certificate page is tidier.** The options sit in a panel beside the certificate (above it in a narrow
+  window), and the certificate grows to fill the rest of the window. The panel has sections: **Template**, **Words**
+  (name, To, From, message, weight and AI ideas) and **Photo** are open. **Colors**, **Filaments used**, **Fonts and
+  sizes** and **Multi-plate print** fold to one line with a summary (their colors, "7 listed", "Combined with 1
+  other print") and open with a click. Which sections are open is remembered. Print and Save as PDF stay at the top.
+
 ## 2.58.0
 - **Compare slices: the whole project's print time** for models with several plates. Optional: under the versions,
   pick **All N plates** instead of **Only this plate** (the default). Every version is sliced once per plate, so the
