@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.60.0
+- **Certificate: change the sentence under the name.** A new **Line** box in **Words** holds the words between the
+  name and the date ("was crafted with holiday cheer and finished on"). Type your own, or leave it empty for the
+  template's. Tick **Two or more** when the print is several things (two geckos, a set of ornaments): "was" becomes
+  "were", "Its filament" becomes "Their filament", and the Kids' toy heading says "New friends have arrived!".
+  Saved with the certificate.
+
 ## 2.59.2
 - **Fixed: Snapmaker Orca could refuse to send a print** with "Processing of the filename_format template failed …
   Non-integer index is not allowed to address a vector variable". The app names the G-code after the saved file,

@@ -95,6 +95,9 @@ body.cert-mode > .controls:not(.certctl), body.cert-mode #report { display: none
 .certctl .ctitle { font-size: 15px; } .certctl .grow { flex: 1; }
 .certctl label.btn { display: inline-flex; }
 /* the certificate's options (2.59.0): a panel beside the certificate, in folding sections */
+.certctl .bornrow { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; min-width: 0; }
+.certctl .bornrow input[type=text] { flex: 1 1 100%; min-width: 0; }
+.certctl .bornrow label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
 .certctl .fromrow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 0; }
 .certctl .fromrow select { flex: 0 1 auto; max-width: 100%; } .certctl .fromrow input { flex: 1 1 100%; min-width: 0; }
 .chdr { display: flex; flex-direction: column; gap: 4px; }

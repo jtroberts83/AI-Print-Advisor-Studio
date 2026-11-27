@@ -3163,7 +3163,8 @@ ipcMain.handle('cert-filaments', async () => {
   return (st ? st.filaments : []).map(f => ({ name: [f.brand, f.line, f.color].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim(), type: f.type || '', finish: f.finish || '',
     hex: Inv.mainHex(f), preset: f.preset || '', fams: Array.isArray(f.fams) ? f.fams.slice(0, 4) : [] })).filter(f => f.name);
 });
-// fields: { name, to, from, fromLabel (the words under From; empty = the template's), message, template, weight, edit }; photo: a data: URL (new photo), null (remove it) or undefined (keep);
+// fields: { name, to, from, fromLabel (the words under From; empty = the template's), born (the sentence under the name;
+// empty = the template's), plural (two or more things: "were"), message, template, weight, edit }; photo: a data: URL (new photo), null (remove it) or undefined (keep);
 // original: the photo before Touch up (same values), so edits can be changed or undone later
 // mask: the cut-out (a gray PNG) from Touch up, so the next Touch up starts from it (same values as photo)
 ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original, mask) => { await S.ready;
@@ -3171,7 +3172,7 @@ ipcMain.handle('cert-set', async (_e, jobId, fields, photo, original, mask) => {
   const k = reportKey(job);
   await fs.mkdir(certDir(), { recursive: true });
   const f = fields && typeof fields === 'object' ? fields : {};
-  const clean = { name: certText(f.name, 80), to: certText(f.to, 80), from: certText(f.from, 80), fromLabel: certText(f.fromLabel, 40), message: certText(f.message, 240), weight: certText(f.weight, 30),
+  const clean = { name: certText(f.name, 80), to: certText(f.to, 80), from: certText(f.from, 80), fromLabel: certText(f.fromLabel, 40), born: certText(f.born, 120), plural: f.plural === true, message: certText(f.message, 240), weight: certText(f.weight, 30),
     template: certText(f.template, 20), edit: certEdit(f.edit),
     combine: Array.isArray(f.combine) ? f.combine.filter(s => typeof s === 'string' && s.length < 200).slice(0, 40) : [] };
   // the colors shown, when changed on the certificate (left out: the print's own)

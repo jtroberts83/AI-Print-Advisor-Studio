@@ -259,7 +259,7 @@
     professional: { label: 'Professional', kicker: 'Production record', title: 'Certificate of Manufacture', intro: 'This document certifies that the part',
       born: 'was manufactured to specification and completed on', to: 'Prepared for', from: 'Manufactured by', seal: ['QUALITY', 'VERIFIED'], ring: 'ADDITIVE MANUFACTURING · INSPECTED · APPROVED · ' },
     kids: { label: 'Kids’ toy', kicker: 'Hooray! A new friend has arrived!', title: 'Official Toy Birth Certificate', intro: 'Say hello to',
-      born: 'was born at the 3D printer on', to: 'Best friend', from: 'Made with love by', seal: ['BRAND', 'NEW TOY'], ring: 'PLAY · IMAGINE · HAVE FUN · BE KIND · ' },
+      kickerPl: 'Hooray! New friends have arrived!', born: 'was born at the 3D printer on', to: 'Best friend', from: 'Made with love by', seal: ['BRAND', 'NEW TOY'], ring: 'PLAY · IMAGINE · HAVE FUN · BE KIND · ' },
     christmas: { label: 'Christmas gift', kicker: 'Made in the holiday workshop', title: 'Certificate of Christmas Magic', intro: 'This certifies that',
       born: 'was crafted with holiday cheer and finished on', to: 'To', from: 'From', seal: ['MERRY', 'CHRISTMAS'], ring: 'SEASON’S GREETINGS · JOY · PEACE · LOVE · ' },
     mistletoe: { label: 'Mistletoe', kicker: 'Hung with love this holiday season', title: 'A Mistletoe Keepsake', intro: 'With a little holiday magic,',
@@ -287,6 +287,11 @@
     ['Formal', ['Sincerely', 'Yours truly', 'Created by', 'Made by', 'Printed by', 'Designed and printed by']],
   ];
   const fromWords = (tp) => (C.fields && C.fields.fromLabel) || tp.from;
+  // the sentence under the name ("was crafted with holiday cheer and finished on"): your own words (fields.born), or the
+  // template's, with "were" when the print is two or more things (fields.plural: two geckos, a set of ornaments…)
+  const plural = () => !!(C.fields && C.fields.plural);
+  const autoBorn = (tp) => (plural() ? tp.born.replace(/^was\b/, 'were') : tp.born);
+  const bornWords = (tp) => (C.fields && C.fields.born) || autoBorn(tp);
   TEMPLATES.kids.letters = ['#ff4d6d', '#fb5607', '#f4a100', '#06b88a', '#118ab2', '#8338ec'];
   TEMPLATES.rainbow.letters = ['#e63946', '#f4a261', '#d4a93a', '#2a9d8f', '#457b9d', '#9b5de5'];
   // each letter its own color (a gradient clipped to the text prints with a box around it)
@@ -701,7 +706,7 @@
     return `<div class="cert t-${esc(t)}">
       ${decoSvg(t, j.id)}
       <div class="paper">
-        <header class="chead"><div class="kicker">${esc(tp.kicker)}</div><h1>${tp.letters ? rainbowText(tp.title, tp.letters) : esc(tp.title)}</h1></header>
+        <header class="chead"><div class="kicker">${esc((plural() && tp.kickerPl) || tp.kicker)}</div><h1>${tp.letters ? rainbowText(tp.title, tp.letters) : esc(tp.title)}</h1></header>
         <div class="cbody">
           <div class="pcol"><div class="pcell"><figure class="cphoto ${photo ? '' : 'none'} ${C.photo && C.fields.edit && C.fields.edit.removeBg ? 'cutout' : ''}"${ar ? ` style="--ar:${ar.toFixed(4)}"` : ''}>${photo ? `<img src="${esc(photo)}" alt="" style="object-fit:${C.photo ? 'cover' : 'contain'}">` : '<span>Add a photo</span>'}
             ${colors.length && !filsOf().length ? `<figcaption>${colors.map((x) => `<span class="sw" style="background:${esc(x.color)}"></span>`).join('')}</figcaption>` : ''}</figure></div>
@@ -709,9 +714,9 @@
           <div class="cinfo">
             <div class="intro">${esc(tp.intro)}</div>
             <div class="cname">${esc(name)}</div>
-            <div class="born">${esc(tp.born)} <b>${esc(dateOnly(born))}</b></div>
+            <div class="born">${esc(bornWords(tp))} <b>${esc(dateOnly(born))}</b></div>
             <dl class="cstats">${stats.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
-            ${m ? `<div class="cfun">${ruler}<span>Its filament laid end to end: ${esc(compare(m))}</span></div>` : ''}
+            ${m ? `<div class="cfun">${ruler}<span>${plural() ? 'Their' : 'Its'} filament laid end to end: ${esc(compare(m))}</span></div>` : ''}
             ${f.message ? `<div class="cmsg">“${esc(f.message)}”</div>` : ''}
           </div>
         </div>
@@ -921,6 +926,7 @@
         `<label class="tpl t-${esc(k)} ${k === cur ? 'on' : ''}"><input type="radio" name="tpl" value="${esc(k)}" ${k === cur ? 'checked' : ''}><span class="dot"></span>${esc(v.label)}</label>`).join('')}</div>`)}
       ${sec('words', 'Words', esc(words), () => `<div class="cform">
         <label for="cName">Name</label><input id="cName" type="text" maxlength="80" placeholder="${esc(nameOf(C.job))}" value="${esc(f.name || '')}">
+        <label for="cBorn" title="The sentence under the name; the date follows it">Line</label><span class="bornrow"><input id="cBorn" type="text" maxlength="120" placeholder="${esc(autoBorn(tp))}" value="${esc(f.born || '')}" title="The sentence under the name, before the date. Leave it empty for the template’s words."><label class="small" title="Two or more things in this print (two geckos, a set of ornaments): “was” becomes “were”"><input type="checkbox" id="cPlural" ${f.plural ? 'checked' : ''}> Two or more</label></span>
         <label for="cTo">To</label><input id="cTo" type="text" maxlength="80" placeholder="Name (printed above “${esc(tp.to)}”)" value="${esc(f.to || '')}">
         <label for="cFrom">From</label>${fromHtml(cur)}
         <label for="cMsg">Message</label><textarea id="cMsg" rows="2" maxlength="240" placeholder="Optional, e.g. Merry Christmas! Made just for you.">${esc(f.message || '')}</textarea>
@@ -1135,12 +1141,14 @@
       return;
     }
     if (t.id === 'cName') f.name = t.value; else if (t.id === 'cTo') f.to = t.value; else if (t.id === 'cFrom') f.from = t.value; else if (t.id === 'cFromOwn') f.fromLabel = t.value.trim();
+    else if (t.id === 'cBorn') f.born = t.value.trim();
     else if (t.id === 'cMsg') f.message = t.value; else if (t.id === 'cWeight') f.weight = t.value; else return;
     saveFields(); renderCert();
   });
   $('certControls').addEventListener('change', async (e) => {
     const t = e.target;
     if (t.id === 'cSayLen') { try { localStorage.setItem('aipa.sayLen', t.value); } catch {} return; }
+    if (t.id === 'cPlural') { C.fields.plural = t.checked; if (C.fields.born) C.fields.born = C.fields.plural ? C.fields.born.replace(/^was\b/i, (w) => (w[0] === 'W' ? 'Were' : 'were')) : C.fields.born.replace(/^were\b/i, (w) => (w[0] === 'W' ? 'Was' : 'was')); saveFields(); certControls(); renderCert(); return; }
     if (t.name === 'tpl') { C.fields.template = t.value; saveFields(); certControls(); renderCert(); }
     else if (t.id === 'cFromWord') {
       C.fromOwn = t.value === '__own';
