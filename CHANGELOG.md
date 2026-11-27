@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.59.1
+- The certificate page remembers its open sections in a simpler way (only their names). Nothing else changed.
+
 ## 2.59.0
 - **Certificate: pick the words under the From name.** Next to From, choose the template's own words (such as
   *Created by*) or **Love**, **With love from**, **Love always**, **XOXO**, **Hugs and kisses**, **Your friend**,

@@ -890,9 +890,13 @@
   // most (template, words, photo) are open; colors, filaments, fonts and multi-plate fold to a one-line summary.
   // Which sections are open is remembered.
   const SEC_OPEN = { style: true, words: true, photo: true, colors: false, fils: false, fonts: false, plates: false };
-  const secState = () => { try { return JSON.parse(localStorage.getItem('aipa.certSecs') || '{}') || {}; } catch { return {}; } };
-  const secOpen = (k) => { const v = secState()[k]; return typeof v === 'boolean' ? v : SEC_OPEN[k]; };
-  const setSec = (k, v) => { try { const all = secState(); all[k] = v; localStorage.setItem('aipa.certSecs', JSON.stringify(all)); } catch {} };
+  // kept as a list of the open sections' names, e.g. "style,words,photo"
+  const openList = () => { try { const v = localStorage.getItem('aipa.certPanelOpen'); return v == null ? null : v.split(',').filter((k) => k in SEC_OPEN); } catch { return null; } };
+  const secOpen = (k) => { const l = openList(); return l ? l.includes(k) : SEC_OPEN[k]; };
+  const setSec = (k, v) => {
+    const names = Object.keys(SEC_OPEN).filter((x) => (x === k ? v : secOpen(x)));
+    try { localStorage.setItem('aipa.certPanelOpen', names.join(',')); } catch {}
+  };
   function sec(k, title, summary, body) {
     const open = secOpen(k);
     return `<section class="csec${open ? ' open' : ''}"><button type="button" class="csec-h" data-sect="${k}" aria-expanded="${open}">
