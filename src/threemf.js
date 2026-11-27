@@ -403,6 +403,52 @@ function imageLabel(n) {
 }
 
 // ---------- analysis for one plate ----------
+// A smaller copy of a triangle soup for the 3D preview (pos: 9 floats per triangle). Points closer together than a
+// grid cell are merged into one (their average), and triangles that shrink to a line or a point are left out, so the
+// surface stays closed (no see-through holes, as taking every Nth triangle gave). The cell size is grown until about
+// `target` triangles are left. Returns { pos, keep }: keep[i] = the file's triangle that shown triangle i came from.
+function clusterTris(pos, target) {
+  const n = pos.length / 9;
+  if (n <= target) return null;
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) { const v = pos[i + k]; if (v < min[k]) min[k] = v; if (v > max[k]) max[k] = v; }
+  // average edge length (from a sample) sets the first cell size
+  let e = 0, m = 0;
+  for (let t = 0; t < n; t += Math.max(1, Math.floor(n / 20000))) {
+    const o = t * 9; e += Math.hypot(pos[o] - pos[o + 3], pos[o + 1] - pos[o + 4], pos[o + 2] - pos[o + 5]); m++;
+  }
+  let h = Math.max(1e-4, (e / m) * Math.sqrt(n / target) * 0.75);
+  const cid = new Int32Array(n * 3);
+  for (let tries = 0; tries < 12; tries++, h *= 1.2) {
+    const K = Math.ceil((max[0] - min[0]) / h) + 2, L = Math.ceil((max[1] - min[1]) / h) + 2;
+    const cells = new Map();
+    for (let c = 0; c < n * 3; c++) {
+      const o = c * 3;
+      const key = Math.floor((pos[o] - min[0]) / h) + K * (Math.floor((pos[o + 1] - min[1]) / h) + L * Math.floor((pos[o + 2] - min[2]) / h));
+      let id = cells.get(key); if (id === undefined) { id = cells.size; cells.set(key, id); }
+      cid[c] = id;
+    }
+    let kept = 0;
+    for (let t = 0; t < n; t++) { const a = cid[t * 3], b = cid[t * 3 + 1], c = cid[t * 3 + 2]; if (a !== b && b !== c && a !== c) kept++; }
+    if (kept > target * 1.05 && tries < 11) continue;
+    // each cell's point: the average of the points merged into it
+    const sum = new Float64Array(cells.size * 3), cnt = new Uint32Array(cells.size);
+    for (let c = 0; c < n * 3; c++) { const id = cid[c], o = c * 3; sum[id * 3] += pos[o]; sum[id * 3 + 1] += pos[o + 1]; sum[id * 3 + 2] += pos[o + 2]; cnt[id]++; }
+    for (let id = 0; id < cnt.length; id++) for (let k = 0; k < 3; k++) sum[id * 3 + k] /= cnt[id];
+    const out = new Float32Array(kept * 9), keep = new Uint32Array(kept);
+    let j = 0;
+    for (let t = 0; t < n; t++) {
+      const a = cid[t * 3], b = cid[t * 3 + 1], c = cid[t * 3 + 2];
+      if (a === b || b === c || a === c) continue;
+      const o = j * 9;
+      for (let k = 0; k < 3; k++) { out[o + k] = sum[a * 3 + k]; out[o + 3 + k] = sum[b * 3 + k]; out[o + 6 + k] = sum[c * 3 + k]; }
+      keep[j++] = t;
+    }
+    return { pos: out, keep };
+  }
+  return null;
+}
+
 function analyzePlate(project, plateIndex, rotations = {}, opts = {}) {
   const plate = project.plates.find(p => p.index === plateIndex) || project.plates[0];
   const membership = plateMembership(project);
@@ -419,7 +465,9 @@ function analyzePlate(project, plateIndex, rotations = {}, opts = {}) {
 
   let totalTris = 0;
   for (const it of usedItems) for (const m of it.meshes) if (m.type !== 'support' && m.type !== 'other') totalTris += m.mesh.triangles.length / 3;
-  const stride = totalTris > PREVIEW_TRIANGLE_LIMIT ? Math.ceil(totalTris / PREVIEW_TRIANGLE_LIMIT) : 1;
+  // a very big model: the preview gets a smaller copy of each mesh (measurements use the full mesh)
+  const ratio = totalTris > PREVIEW_TRIANGLE_LIMIT ? PREVIEW_TRIANGLE_LIMIT / totalTris : 1;
+  let simplified = false;
 
   const g = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
   const objects = [];
@@ -467,35 +515,36 @@ function analyzePlate(project, plateIndex, rotations = {}, opts = {}) {
     for (const w of worldTris) {
       let pos = w.pos;
       const n0 = pos.length / 9;
-      const pick = stride > 1 ? Math.floor(n0 / stride) : n0;
-      const src = (i) => (stride > 1 ? i * stride : i);
+      const small = ratio < 1 && n0 > 2000 ? clusterTris(pos, Math.max(1000, Math.floor(n0 * ratio))) : null;
+      if (small) simplified = true;
+      const pick = small ? small.keep.length : n0;
+      const src = (i) => (small ? small.keep[i] : i);
+      const sp = small ? small.pos : pos;   // the shown triangle i's corners: sp[i*9 ..]
       let triFilament = null, srcTri = null; // srcTri: which source triangle each shown triangle came from
       if (w.paint && w.kind === 'model') {
         // painted colour: each painted triangle becomes its coloured pieces; 0 = the part's own filament
         const P = [], F = [], SRC = [];
         const cache = new Map();
         for (let i = 0; i < pick; i++) {
-          const t = src(i), o = t * 9;
+          const t = src(i), o = i * 9;
           const str = w.paint[t];
           let tree = null;
           if (str) { tree = cache.get(str); if (tree === undefined) { tree = decodePaint(str); cache.set(str, tree); } }
           if (!tree || F.length > PAINT_PIECE_LIMIT) {
             // past the limit (very fine painting), each triangle gets its main colour so the view stays fast
-            for (let k = 0; k < 9; k++) P.push(pos[o + k]);
+            for (let k = 0; k < 9; k++) P.push(sp[o + k]);
             F.push(tree ? dominantState(tree) : 0); SRC.push(t);
             continue;
           }
-          subdividePaint(tree, [pos[o], pos[o + 1], pos[o + 2]], [pos[o + 3], pos[o + 4], pos[o + 5]], [pos[o + 6], pos[o + 7], pos[o + 8]],
+          subdividePaint(tree, [sp[o], sp[o + 1], sp[o + 2]], [sp[o + 3], sp[o + 4], sp[o + 5]], [sp[o + 6], sp[o + 7], sp[o + 8]],
             (a, b, c, st) => { P.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]); F.push(st); SRC.push(t); });
         }
         pos = Float32Array.from(P);
         triFilament = Uint8Array.from(F);
         srcTri = Uint32Array.from(SRC);
-      } else if (stride > 1) {
-        const d = new Float32Array(pick * 9);
-        for (let i = 0; i < pick; i++) d.set(pos.subarray(src(i) * 9, src(i) * 9 + 9), i * 9);
-        pos = d;
-        srcTri = new Uint32Array(pick); for (let i = 0; i < pick; i++) srcTri[i] = src(i);
+      } else if (small) {
+        pos = small.pos;
+        srcTri = small.keep;
       }
       preview.push({ name: it.name, extruder: w.extruder, kind: w.kind, subtype: w.subtype, positions: pos, triFilament, srcTri, meshKey: w.meshKey });
     }
@@ -522,7 +571,7 @@ function analyzePlate(project, plateIndex, rotations = {}, opts = {}) {
     flatTopAreaCm2: +(sum(o => o.flatTopAreaCm2)).toFixed(2),
     fitsBuildVolume: size[0] <= getMachine().bed.width && size[1] <= getMachine().bed.depth && size[2] <= getMachine().height,
     paintedTriangles: sum(o => o.paintedTriangles),
-    previewSimplified: stride > 1,
+    previewSimplified: simplified,
   };
   totals.overhangPercent45 = totals.surfaceAreaCm2 ? +(100 * totals.overhangAreaBelow45Cm2 / totals.surfaceAreaCm2).toFixed(1) : 0;
   totals.overhangPercent30 = totals.surfaceAreaCm2 ? +(100 * totals.overhangAreaBelow30Cm2 / totals.surfaceAreaCm2).toFixed(1) : 0;
@@ -773,4 +822,4 @@ function buildPresets(project, changes, baseName) {
 }
 function safeName(s) { return s.replace(/[\\/:*?"<>|@]+/g, '_').replace(/\s+/g, ' ').trim(); }
 
-module.exports = { plateMembership, load3mf, analyzePlate, settingsSummary, writeModified, buildPresets, applyChanges, compose, parseTransform, setBuildTransforms, rotationAbout, parseModelBytes, BIG_MODEL_BYTES };
+module.exports = { clusterTris, plateMembership, load3mf, analyzePlate, settingsSummary, writeModified, buildPresets, applyChanges, compose, parseTransform, setBuildTransforms, rotationAbout, parseModelBytes, BIG_MODEL_BYTES };

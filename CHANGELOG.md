@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.60.1
+- **Fixed: very detailed models looked see-through in the 3D view** (speckled, like scattered dots, such as the
+  Japandi Rentier with 3 million triangles). For models over 1.5 million triangles the view showed only every 2nd or
+  3rd triangle, leaving holes. It now shows a smaller copy that merges points closer together than a tiny grid, so
+  the surface stays solid and keeps its shape. Measurements, slicing and saving still use the full model.
+
 ## 2.60.0
 - **Certificate: change the sentence under the name.** A new **Line** box in **Words** holds the words between the
   name and the date ("was crafted with holiday cheer and finished on"). Type your own, or leave it empty for the
