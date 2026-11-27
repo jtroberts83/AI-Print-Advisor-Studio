@@ -204,6 +204,7 @@
         <div class="compare-controls">
           <p class="hint" id="compareHint">Slice variants with Snapmaker Orca and compare real print time, filament and flow.</p>
           <div class="checks-row" id="variantPicks"></div>
+          <div class="plate-scope hidden" id="plateScope"></div>
           <button class="btn primary" id="sliceBtn">Slice and compare</button>
         </div>
         <div id="compareBody"></div>
@@ -696,6 +697,14 @@
       <p class="hint" id="bxStatus"></p>
       <p class="hint">Not test-printed on that printer? Say so in your MakerWorld description (e.g. “converted from a tested Snapmaker U1 profile”).</p>
       <div class="row-btns"><button class="btn primary" id="bxExport">Export</button> <button class="btn hidden" id="bxLocate">Locate Bambu Studio…</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="allPlatesDialog" class="fpic">
+    <div class="sd-head"><h2>Slice the whole project?</h2></div>
+    <div class="bx-body">
+      <div id="apBody"></div>
+      <div class="row-btns"><button class="btn primary" id="apStart">Start slicing</button> <button class="btn" id="apOne">Only this plate</button> <button class="btn ghost" id="apCancel">Cancel</button></div>
     </div>
   </dialog>
 

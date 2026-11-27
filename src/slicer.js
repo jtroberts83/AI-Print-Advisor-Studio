@@ -54,13 +54,23 @@ class Slicer {
 
   get available() { return !!(this.exe && fss.existsSync(this.exe) && this.lib && this.lib.available); }
 
-  async run(args, outDir, timeoutMs = 15 * 60 * 1000) {
+  // token (optional): { cancelled, children: Set } from cancelToken(); cancelling kills its running slicer processes and
+  // stops queued slices before they start
+  static cancelToken() {
+    const t = { cancelled: false, children: new Set() };
+    t.cancel = () => { t.cancelled = true; for (const c of t.children) { try { c.kill(); } catch {} } };
+    return t;
+  }
+  static cancelledError() { const e = new Error('Cancelled.'); e.cancelled = true; return e; }
+
+  async run(args, outDir, timeoutMs = 15 * 60 * 1000, token = null) {
     await fs.mkdir(this.dataDir, { recursive: true });
     await fs.mkdir(outDir, { recursive: true });
     const full = ['--datadir', this.dataDir, ...args];
     const [cmd, ...pre] = this.wrapper ? [...this.wrapper, this.exe] : [this.exe];
     return new Promise((resolve) => {
       const child = spawn(cmd, [...pre, ...full], { cwd: outDir, windowsHide: true });
+      if (token) { token.children.add(child); if (token.cancelled) child.kill(); }
       let log = '';
       const keep = (d) => { log += d.toString(); if (log.length > 20000) log = log.slice(-20000); };
       child.stdout.on('data', keep); child.stderr.on('data', keep);
@@ -68,6 +78,7 @@ class Slicer {
       child.on('error', (e) => { clearTimeout(timer); resolve({ code: -1, result: null, log: String(e) }); });
       child.on('close', async (code) => {
         clearTimeout(timer);
+        if (token) token.children.delete(child);
         let result = null;
         try { result = JSON.parse(await fs.readFile(path.join(outDir, 'result.json'), 'utf8')); } catch {}
         resolve({ code, result, log: log.slice(-3000) });
@@ -759,11 +770,16 @@ class Slicer {
 
   // cacheKey: a stable description of what is being sliced (file, toolheads, settings, orientation), so results
   // are found again after a restart. Without it the zip bytes are used, which differ run to run.
-  async slice(buffer, plateIndex, cacheKey = null) {
+  cacheFileFor(plateIndex, cacheKey) { return path.join(this.cacheDir, `${sha('v2', cacheKey, String(plateIndex), this.exe || '')}.json`); }
+  isCached(plateIndex, cacheKey) { return fss.existsSync(this.cacheFileFor(plateIndex, cacheKey)); }
+
+  async slice(buffer, plateIndex, cacheKey = null, token = null) {
     const key = cacheKey ? sha('v2', cacheKey, String(plateIndex), this.exe || '') : sha(buffer, String(plateIndex), this.exe || '');
     const cacheFile = path.join(this.cacheDir, `${key}.json`);
     try { return { ...JSON.parse(await fs.readFile(cacheFile, 'utf8')), cached: true }; } catch {}
+    if (token && token.cancelled) throw Slicer.cancelledError();
     return this.schedule(async () => {
+      if (token && token.cancelled) throw Slicer.cancelledError();
       const dir = path.join(this.workDir, 'slices', key);
       await fs.rm(dir, { recursive: true, force: true });
       await fs.mkdir(dir, { recursive: true });
@@ -779,7 +795,8 @@ class Slicer {
       const corrections = [];
       let conflict = null, noCheck = false, r;
       for (let attempt = 0; attempt < 4; attempt++) {
-        r = await this.run(noCheck ? ['--no-check', ...args] : args, dir);
+        r = await this.run(noCheck ? ['--no-check', ...args] : args, dir, undefined, token);
+        if (token && token.cancelled) throw Slicer.cancelledError();
         const ok = (await fs.readdir(dir)).some(f => /\.gcode$/.test(f)) && !(r.result && r.result.return_code !== 0);
         if (ok) break;
         const c = !noCheck && Slicer.conflictIn(r);

@@ -680,27 +680,39 @@ function projectLooksLikeAssembly(project) {
 ipcMain.handle('set-assembly', async (_e, { assembly, guess }) => { S.assembly = !!assembly; S.assemblyGuess = !!guess; return true; });
 ipcMain.handle('fit-critical', () => [...FIT_CRITICAL]);
 
-async function sliceVariant(plateIndex, v) {
-  try { return await sliceVariantOnce(plateIndex, v); }
+async function sliceVariant(plateIndex, v, token = null) {
+  try { return await sliceVariantOnce(plateIndex, v, token); }
   catch (e) {
+    if (e.cancelled) throw e;
     logLine('slice failed:', e.message, e.log ? `| ${String(e.log).split(/\r?\n/).filter(l => /\[(error|warning)\]|error/i.test(l)).slice(-4).join(' | ').slice(0, 600)}` : '');
     // a thicker layer height can make a thin detail vanish between layers ("empty layer"): retry this version
     // with the model's own layer height, keeping its other changes
     const layerKeys = ['layer_height', 'initial_layer_print_height'];
     if (!e.failedSlicing || !(v.changes || []).some(c => layerKeys.includes(c.key))) throw e;
     const tried = (v.changes.find(c => c.key === 'layer_height') || {}).value;
-    const r = await sliceVariantOnce(plateIndex, { ...v, changes: v.changes.filter(c => !layerKeys.includes(c.key)) });
+    const r = await sliceVariantOnce(plateIndex, { ...v, changes: v.changes.filter(c => !layerKeys.includes(c.key)) }, token);
     const note = `Couldn’t slice with ${tried ? `${tried} mm` : 'these'} layers: this model has a detail too thin for them (it leaves an empty layer), so this version uses the model’s own layer height and keeps its other changes.`;
     return { ...r, corrections: [note, ...(r.corrections || [])], layerFallback: true };
   }
 }
 
-async function sliceVariantOnce(plateIndex, v) {
+// what identifies one slice in the cache (the same version of the same file on the same plate is found again)
+function variantSliceKey(plateIndex, v) {
   const fin = finalize(v.changes, plateIndex, v.rotations, v.objectChanges);
   const shift = v.shift ? { plate: plateIndex, dx: v.shift.dx || 0, dy: v.shift.dy || 0 } : null;
-  const built = await Slicer.buildVariantDetailed(S.base.buffer, { changes: fin.changes, objectChanges: fin.objectChanges, rotations: v.rotations || {}, project: S.base.project, shift });
   const cacheKey = JSON.stringify({ file: S.originalHash, slots: S.slots, changes: fin.changes.map(c => [c.key, c.value, c.slot || 0]).sort(), objectChanges: fin.objectChanges, rotations: v.rotations || {}, shift, app: require('./package.json').version });
-  const r = await S.slicer.slice(built.buffer, plateIndex, cacheKey);
+  return { fin, shift, cacheKey };
+}
+async function sliceVariantOnce(plateIndex, v, token = null) {
+  const { fin, shift, cacheKey } = variantSliceKey(plateIndex, v);
+  // already sliced: no need to build the project again
+  if (S.slicer.isCached(plateIndex, cacheKey)) {
+    const r = await S.slicer.slice(null, plateIndex, cacheKey, token).catch(() => null);
+    if (r && r.cached) return { ...r, corrections: [...new Set([...fin.fixes.map(f => `${f.key.replace(/_/g, ' ')} → ${f.value}: ${f.reason}`), ...(r.corrections || [])])] };
+  }
+  if (token && token.cancelled) throw Slicer.cancelledError();
+  const built = await Slicer.buildVariantDetailed(S.base.buffer, { changes: fin.changes, objectChanges: fin.objectChanges, rotations: v.rotations || {}, project: S.base.project, shift });
+  const r = await S.slicer.slice(built.buffer, plateIndex, cacheKey, token);
   const fixes = fin.fixes.map(f => `${f.key.replace(/_/g, ' ')} → ${f.value}: ${f.reason}`);
   return { ...r, corrections: [...new Set([...fixes, ...built.corrections, ...(r.corrections || [])])] };
 }
@@ -913,6 +925,104 @@ ipcMain.handle('slice-variants', async (_e, { plateIndex, variants }) => { await
   return results;
 });
 
+// ---------- the whole project: every plate of every version ----------
+// A multi-plate project prints plate after plate, so its print time is all the plates added together. Each version
+// is sliced once per plate (one version after another, so finished versions show while the rest are still slicing);
+// slices made before come from the cache instantly. Cancel stops the running slicer processes and the queued ones.
+function projectPlates() {
+  return (S.base.project.plates || []).filter(p => (p.objectIds || []).length).map(p => ({ index: p.index, name: p.name || '', objectCount: p.objectIds.length }));
+}
+ipcMain.handle('slice-project-plan', async (_e, { variants }) => { await S.ready;
+  if (!S.base) throw new Error('Open a .3mf file first.');
+  const plates = projectPlates();
+  const tris = (S.base.project.items || []).reduce((n, it) => n + it.meshes.reduce((m, x) => m + x.mesh.triangles.length / 3, 0), 0);
+  const parallel = S.slicer && S.slicer.available ? S.slicer.setLimitFor(tris) : 1;
+  let cached = 0;
+  for (const v of variants || []) for (const p of plates) { try { if (S.slicer.isCached(p.index, variantSliceKey(p.index, v).cacheKey)) cached++; } catch {} }
+  // how long a slice of this model took before (real slices only), for the time estimate
+  const took = Object.values(S.lastSlices || {}).map(r => r && !r.cached && r.sliceSeconds).filter(n => n > 0);
+  return { plates, parallel, cached, perSlice: took.length ? Math.round(took.reduce((a, b) => a + b, 0) / took.length) : null };
+});
+ipcMain.handle('slice-project-cancel', () => { if (S.projectToken) S.projectToken.cancel(); return true; });
+ipcMain.handle('slice-project', async (_e, { variants, focusPlate }) => { await S.ready;
+  if (S.base) assertRightPrinter();
+  if (!S.slicer || !S.slicer.available) throw new Error('Set the Snapmaker Orca location in Settings to slice.');
+  if (S.projectToken) S.projectToken.cancel();
+  const token = S.projectToken = Slicer.cancelToken();
+  const plates = projectPlates();
+  const tris = (S.base.project.items || []).reduce((n, it) => n + it.meshes.reduce((m, x) => m + x.mesh.triangles.length / 3, 0), 0);
+  const parallel = S.slicer.setLimitFor(tris);
+  const send = (m) => win && !win.isDestroyed() && win.webContents.send('slice-project-progress', m);
+  const tasks = [];
+  for (const v of variants) for (const p of plates) tasks.push({ v, plate: p.index });
+  const out = Object.fromEntries(variants.map(v => [v.id, {}]));
+  let next = 0;
+  const worker = async () => {
+    while (next < tasks.length && !token.cancelled) {
+      const t = tasks[next++];
+      const started = Date.now();
+      send({ id: t.v.id, plate: t.plate, state: 'slicing', at: started });
+      try {
+        const r = await sliceVariant(t.plate, t.v, token);
+        out[t.v.id][t.plate] = { ok: true, r };
+        send({ id: t.v.id, plate: t.plate, state: 'done', cached: !!r.cached, secs: Math.round((Date.now() - started) / 1000), timeSeconds: r.timeSeconds, grams: r.grams });
+      } catch (e) {
+        if (e.cancelled || token.cancelled) { send({ id: t.v.id, plate: t.plate, state: 'cancelled' }); break; }
+        out[t.v.id][t.plate] = { ok: false, error: e.message };
+        send({ id: t.v.id, plate: t.plate, state: 'failed', error: e.message });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(parallel, tasks.length) }, worker));
+  const cancelled = token.cancelled;
+  if (S.projectToken === token) S.projectToken = null;
+  // each version's plates added together
+  S.projectSlices = S.projectSlices || {};
+  const settingsOf = async (r) => (r && r.gcodePath ? await gcodeSettings(r.gcodePath) : null);
+  const results = [];
+  for (const v of variants) {
+    const per = out[v.id];
+    const done = plates.filter(p => per[p.index] && per[p.index].ok);
+    const failed = plates.filter(p => per[p.index] && !per[p.index].ok);
+    if (done.length < plates.length) {
+      results.push({ id: v.id, ok: false, allPlates: true, platesDone: done.length, platesTotal: plates.length,
+        error: failed.length ? `Plate ${failed[0].index} couldn’t be sliced: ${per[failed[0].index].error}` : `Cancelled: ${done.length} of ${plates.length} plates were sliced.`,
+        cancelled: !failed.length && cancelled });
+      continue;
+    }
+    S.projectSlices[v.id] = Object.fromEntries(done.map(p => [p.index, per[p.index].r]));
+    const rs = done.map(p => per[p.index].r);
+    const total = rs.reduce((a, r) => a + (r.timeSeconds || 0), 0) || 1;
+    const feats = {};
+    for (const r of rs) for (const f of r.gcode.byFeature || []) {
+      const x = feats[f.name] || (feats[f.name] = { name: f.name, t: 0, flowP95: 0 });
+      x.t += f.timeShare * (r.timeSeconds || 0); x.flowP95 = Math.max(x.flowP95, f.flowP95 || 0);
+    }
+    const fil = {};
+    for (const r of rs) for (const f of r.filaments || []) { const x = fil[f.id] || (fil[f.id] = { ...f, usedGrams: 0 }); x.usedGrams = +(x.usedGrams + (f.usedGrams || 0)).toFixed(2); }
+    const vol = {};
+    for (const r of rs) for (const [k, n] of Object.entries(r.gcode.volumeByTool || {})) vol[k] = +((vol[k] || 0) + n).toFixed(1);
+    const focus = per[focusPlate] && per[focusPlate].ok ? per[focusPlate].r : rs[0];
+    S.lastSlices[v.id] = focus;
+    results.push({ id: v.id, ok: true, allPlates: true,
+      timeSeconds: rs.reduce((a, r) => a + (r.timeSeconds || 0), 0), grams: +rs.reduce((a, r) => a + (r.grams || 0), 0).toFixed(2),
+      filaments: Object.values(fil).sort((a, b) => a.id - b.id),
+      gcode: { layers: rs.reduce((a, r) => a + (r.gcode.layers || 0), 0), toolChanges: rs.reduce((a, r) => a + (r.gcode.toolChanges || 0), 0),
+        peakFlowP95: Math.max(...rs.map(r => r.gcode.peakFlowP95 || 0)), volumeByTool: vol,
+        byFeature: Object.values(feats).map(f => ({ name: f.name, timeShare: f.t / total, flowP95: f.flowP95 })).sort((a, b) => b.timeShare - a.timeShare) },
+      warnings: [...new Set(done.flatMap(p => (per[p.index].r.warnings || []).map(w => `Plate ${p.index}: ${w}`)))],
+      corrections: [...new Set(rs.flatMap(r => r.corrections || []))],
+      plates: done.map(p => ({ index: p.index, name: p.name, timeSeconds: per[p.index].r.timeSeconds, grams: per[p.index].r.grams, layers: per[p.index].r.gcode.layers, cached: !!per[p.index].r.cached })) });
+  }
+  const origRes = results.find(r => r.id === 'original' && r.ok);
+  const orig = (origRes && await settingsOf(S.projectSlices.original[origRes.plates[0].index])) || S.base.settings;
+  for (const r of results) {
+    if (!r.ok) continue;
+    try { r.look = describe((await settingsOf(S.projectSlices[r.id][r.plates[0].index])) || S.base.settings, r.id === 'original' ? null : orig); } catch {}
+  }
+  return { results, cancelled, plates };
+});
+
 // The settings a G-code was sliced with: the slicer writes them in a block at the very end, so only the tail is read.
 async function gcodeSettings(file) {
   try {
@@ -952,8 +1062,8 @@ ipcMain.handle('save-3mf', async (_e, { changes, objectChanges, rotations, slide
     wholeFile: fin.objectChanges ? fin.wholeFile.map(c => ({ key: c.key, label: BY_KEY[c.key] ? BY_KEY[c.key].label : c.key, value: c.value, slot: c.slot || 0 })) : [] };
 });
 
-ipcMain.handle('save-gcode', async (_e, { variantId, name }) => { await S.ready;
-  const s = S.lastSlices[variantId];
+ipcMain.handle('save-gcode', async (_e, { variantId, name, plateIndex }) => { await S.ready;
+  const s = (plateIndex && S.projectSlices && S.projectSlices[variantId] && S.projectSlices[variantId][plateIndex]) || S.lastSlices[variantId];
   if (!s) throw new Error('Slice that variant first.');
   const vword = /^(original|recommended)$/i.test(String(name || '')) ? '' : ` ${String(name || '').replace(/\s*(\+.*|recipe)$/i, '').replace(/^Reoriented:\s*/i, '').replace(/[\\/:*?"<>|]+/g, ' ').trim()}`;
   const def = friendlyPath(path.dirname(S.filePath), vword, '.gcode');

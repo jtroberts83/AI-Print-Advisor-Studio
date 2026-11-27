@@ -188,6 +188,33 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 6px 0 2p
 /* results */
 .results-empty p { color: var(--muted); max-width: 46ch; }
 .results-empty strong { color: var(--ink); font-weight: 600; }
+.plate-scope { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 10px; font-size: 13.5px; }
+.plate-scope label { display: flex; gap: 8px; align-items: flex-start; }
+.pp { border: 1px solid var(--line); border-radius: var(--radius-s); padding: 12px 14px; background: var(--raised); }
+.pp-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.pp-bar { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.pp-bar span { display: block; height: 100%; background: var(--accent); transition: width .4s ease; }
+.pp-status { margin: 8px 0 10px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pp-wrap { overflow-x: auto; }
+.pp-grid { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pp-grid th, .pp-grid td { padding: 4px 5px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
+.pp-grid th:first-child, .pp-grid td:first-child { text-align: left; }
+.pp-grid th { color: var(--muted); font-weight: 500; }
+.pp-grid td.slicing { color: var(--accent); font-weight: 600; }
+.pp-grid td.waiting, .pp-grid td.cancelled { color: var(--muted); }
+.pp-grid td.failed { color: var(--warn); }
+.pp-grid td.total { font-weight: 600; }
+.allp-note { margin: 0 0 8px; }
+.ctable tr.prow td { text-align: left; white-space: normal; padding-top: 0; font-size: 12px; color: var(--muted); }
+.ctable tr.prow .pt { display: inline-block; margin-right: 12px; white-space: nowrap; }
+.ctable tr.prow .ptotal { color: var(--ink); }
+.ctable tbody tr:has(+ tr.prow) td { border-bottom: 0; }
+.plate-table td { white-space: nowrap; }
+.plate-table td:first-child { white-space: normal; }
+.plate-table { border-collapse: collapse; font-size: 13px; margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
+.plate-table th, .plate-table td { padding: 4px 10px 4px 0; border-bottom: 1px solid var(--line); text-align: right; }
+.plate-table th:first-child, .plate-table td:first-child { text-align: left; }
+.plate-table th { color: var(--muted); font-weight: 500; }
 .working { display: flex; flex-direction: column; gap: 10px; color: var(--muted); }
 .working .bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .working .bar::after { content: ""; display: block; height: 100%; width: 35%; background: var(--accent); animation: slide 1.4s ease-in-out infinite; }

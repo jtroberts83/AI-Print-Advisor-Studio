@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.58.0
+- **Compare slices: the whole project's print time** for models with several plates. Optional: under the versions,
+  pick **All N plates** instead of **Only this plate** (the default). Every version is sliced once per plate, so the
+  app first says how many slices that is and roughly how long it will take (slices made before are instant), with
+  **Start slicing**, **Only this plate** or **Cancel**. While it slices, a progress panel shows the overall bar, how
+  far along it is, the time so far and about how long is left, what is slicing now, and a grid of every version and
+  plate (each plate's print time as it finishes). **Cancel** stops right away (the running Snapmaker Orca processes
+  are stopped too); versions with every plate sliced are kept. The results show each plate's print time and the whole
+  project's, for every version, compared with the original; **Plate by plate** adds filament and layers, and
+  **Send…** sends one plate (a printer prints one plate at a time). Save as 3MF saves every plate.
+
 ## 2.57.0
 - **Picture for the saved file**: Save as 3MF and Export for Bambu Lab now ask which picture the file gets (the one
   Windows Explorer, the slicer's project list and MakerWorld show). The file's own thumbnail is picked by default,

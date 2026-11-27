@@ -39,6 +39,7 @@ function renderBusy() {
 }
 function setBusy(id, label, pct = null) { busy.delete(id); busy.set(id, { label, pct }); renderBusy(); }
 function clearBusy(id) { busy.delete(id); renderBusy(); }
+const PP = { running: null };   // a whole-project slicing in progress (Compare slices)
 async function withBusy(id, label, fn) { setBusy(id, label); try { return await fn(); } finally { clearBusy(id); } }
 
 api.onProgress(t => {
@@ -1169,7 +1170,7 @@ function renderFileInfo() {
   $('orcaBtn').title = state.info.available ? 'Write this project with the current changes and open it in Snapmaker Orca' : 'Set the Snapmaker Orca location in Settings';
   renderMaterials(); renderResults(); renderCompare(); refreshRecipe();
 }
-$('plateSelect').onchange = e => { state.plateIndex = Number(e.target.value); state.compare = null; loadPlate(); };
+$('plateSelect').onchange = e => { state.plateIndex = Number(e.target.value); if (!(state.compare && state.compare.allPlates)) state.compare = null; loadPlate(); renderCompare(); };
 
 async function prepare() {
   if (TH.editing) endToolheadEdit();
@@ -2015,11 +2016,20 @@ function renderVariantPicks() {
   $('variantPicks').innerHTML = picks.map(p => `<label><input type="checkbox" value="${p}" ${on.has(p) ? 'checked' : ''} ${p === 'recommended' && !hasPlan ? 'disabled' : ''}> ${VARIANT_NAMES[p]}</label>`).join('')
     + `<p class="hint picks-hint">${hasPlan ? 'Finest, Fine, Fast and Fastest use the printer maker’s quality presets for layer height and speed, plus the other recommended settings (supports, cooling and so on).' : 'Finest, Fine, Fast and Fastest are the printer maker’s own quality presets.'} Pick one in the table to save it as a 3MF, send it, or open it in your slicer.</p>`;
   $('variantPicks').querySelectorAll('input').forEach(i => i.onchange = () => { if (i.checked) on.add(i.value); else on.delete(i.value); });
-  $('sliceBtn').disabled = !state.file || !state.info.available;
+  const nPlates = state.file ? state.file.plates.filter(p => p.objectCount).length : 0;
+  $('plateScope').classList.toggle('hidden', nPlates < 2);
+  if (nPlates >= 2) {
+    const all = allPlatesOn();
+    $('plateScope').innerHTML = `<label><input type="radio" name="pscope" value="one" ${all ? '' : 'checked'}> <span>Only this plate (Plate ${state.plateIndex})</span></label>
+      <label><input type="radio" name="pscope" value="all" ${all ? 'checked' : ''}> <span>All ${nPlates} plates (optional): each plate’s print time and the whole project’s. Takes much longer: every version is sliced once per plate, and you’re asked first</span></label>`;
+    $('plateScope').querySelectorAll('input').forEach(i => i.onchange = () => { try { localStorage.setItem('compareAllPlates', i.value === 'all' ? '1' : ''); } catch { /* only a convenience */ } });
+  }
+  $('sliceBtn').disabled = !state.file || !state.info.available || !!PP.running;
   $('compareHint').textContent = !state.info.available ? 'Set the Snapmaker Orca location in Settings to slice variants.'
     : 'Slices each variant with Snapmaker Orca (with your current orientation and toolheads) and compares real print time, filament, tool changes and flow.';
 }
 $('sliceBtn').onclick = () => runCompare([...state.comparePicks].filter(p => p !== 'recommended' || state.result));
+function allPlatesOn() { try { return localStorage.getItem('compareAllPlates') === '1'; } catch { return false; } }
 
 async function runCompare(ids) {
   await toolheadsReady();
@@ -2047,6 +2057,11 @@ async function runCompare(ids) {
   }
   for (const v of variants) v.rotations = state.rotations;
   state.variantDefs = Object.fromEntries(variants.map(v => [v.id, v]));
+  if (state.file.plates.filter(p => p.objectCount).length > 1 && allPlatesOn()) {
+    const how = await confirmAllPlates(variants);
+    if (how === 'all') return runProjectCompare(variants);
+    if (how !== 'one') return;
+  }
   $('compareBody').innerHTML = `<div class="working"><div class="bar"></div><p class="progress-line">Slicing…</p></div>`;
   setBusy('slice', `Slicing ${variants.length} variant${variants.length === 1 ? '' : 's'} in Snapmaker Orca…`, 0);
   try {
@@ -2061,6 +2076,85 @@ async function runCompare(ids) {
   if (tabBtn.getAttribute('aria-selected') !== 'true' && state.compare?.results) tabBtn.innerHTML = 'Compare slices<span class="badge">new</span>';
 }
 
+// ---------- the whole project (every plate) ----------
+const dur = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h} h ${m} min` : m ? `${m} min${m < 10 && x ? ` ${x} s` : ''}` : `${x} s`; };
+async function confirmAllPlates(variants) {
+  let plan;
+  try { plan = await api.sliceProjectPlan({ variants: variants.map(({ id, changes, rotations, objectChanges }) => ({ id, changes, rotations, objectChanges })) }); }
+  catch (e) { toast(cleanErr(e), 6000); return null; }
+  const total = variants.length * plan.plates.length, toRun = Math.max(0, total - plan.cached);
+  const est = plan.perSlice ? Math.ceil(toRun / plan.parallel) * plan.perSlice : null;
+  $('apBody').innerHTML = `<p style="margin-top:0">This slices each version once per plate: <b>${variants.length} version${variants.length === 1 ? '' : 's'} × ${plan.plates.length} plates = ${total} slices</b>${plan.cached ? `, ${plan.cached} of them already sliced earlier (instant)` : ''}.</p>
+    <p>${toRun === 0 ? 'Everything is sliced already, so this is quick.' : est ? `It may take about <b>${esc(dur(est))}</b> (a slice of this model took about ${esc(dur(plan.perSlice))}; Snapmaker Orca runs ${plan.parallel} at a time on this PC).` : `Each slice usually takes from 20 seconds to several minutes, depending on the model, and Snapmaker Orca runs ${plan.parallel} at a time on this PC, so this can take a while.`}</p>
+    <p class="hint">Your PC will be busy while it slices. You can keep using the app, watch each plate’s progress, and <b>Cancel</b> at any time (versions already finished are kept). Fewer versions are quicker.</p>`;
+  const dlg = $('allPlatesDialog');
+  dlg.showModal();
+  return new Promise(ok => {
+    const done = (v) => { dlg.onclose = null; if (dlg.open) dlg.close(); ok(v); };
+    $('apStart').onclick = () => done('all'); $('apOne').onclick = () => done('one'); $('apCancel').onclick = () => done(null);
+    dlg.onclose = () => ok(null);
+    PP.plan = plan;
+  });
+}
+function renderProjectProgress() {
+  const P = PP.running; if (!P) return;
+  const cells = Object.values(P.cells), total = cells.length;
+  const finished = cells.filter(c => /done|failed|cancelled/.test(c.state)).length;
+  const now = Date.now(), elapsed = (now - P.started) / 1000;
+  const real = cells.filter(c => c.state === 'done' && !c.cached && c.secs > 0);
+  const per = real.length ? real.reduce((a, c) => a + c.secs, 0) / real.length : P.plan.perSlice;
+  const cachedLeft = Math.max(0, P.plan.cached - cells.filter(c => c.state === 'done' && c.cached).length);
+  const left = Math.max(0, total - finished - cachedLeft);
+  const running = cells.filter(c => c.state === 'slicing');
+  // the running slices' time so far counts toward the estimate
+  const eta = per ? Math.max(0, (left * per - running.reduce((a, c) => a + Math.min(per, (now - c.at) / 1000), 0)) / P.plan.parallel) : null;
+  const pct = Math.round(100 * finished / total);
+  const bar = document.querySelector('.pp-bar span'); if (!bar) return;
+  bar.style.width = `${pct}%`;
+  $('ppStatus').textContent = P.cancelling ? `Cancelling… (${finished} of ${total} slices done)`
+    : `${finished} of ${total} slices (${pct}%) · ${dur(elapsed)} so far · ${finished === total ? 'adding up the plates…' : eta == null ? 'working out the time left…' : `about ${dur(eta)} left`}${running.length ? ` · now: ${running.map(c => `${P.names[c.id]}, plate ${c.plate}`).join('; ')}` : ''}`;
+  setBusy('slice', `Slicing the whole project: ${finished} of ${total}${eta != null && finished < total ? `, about ${dur(eta)} left` : ''}`, pct);
+  const cell = (c) => {
+    if (c.state === 'slicing') return `<td class="slicing" title="Slicing now">⏳ ${dur((now - c.at) / 1000)}</td>`;
+    if (c.state === 'done') return `<td title="${c.cached ? 'From an earlier slice' : `Sliced in ${dur(c.secs)}`}">✓ ${esc(hm(c.timeSeconds))}${c.cached ? ' ⚡' : ''}</td>`;
+    if (c.state === 'failed') return `<td class="failed" title="${esc(c.error || '')}">✗</td>`;
+    if (c.state === 'cancelled') return '<td class="cancelled" title="Cancelled">–</td>';
+    return '<td class="waiting" title="Waiting">·</td>';
+  };
+  $('ppGrid').innerHTML = `<thead><tr><th>Version</th>${P.plates.map(p => `<th>Plate ${p.index}</th>`).join('')}<th>All plates</th></tr></thead><tbody>
+    ${P.ids.map(id => { const row = P.plates.map(p => P.cells[`${id}|${p.index}`]); const all = row.every(c => c.state === 'done');
+      return `<tr><td>${esc(P.names[id])}</td>${row.map(cell).join('')}<td class="total">${all ? esc(hm(row.reduce((a, c) => a + (c.timeSeconds || 0), 0))) : row.some(c => c.state === 'failed') ? '—' : ''}</td></tr>`; }).join('')}</tbody>`;
+}
+api.onSliceProjectProgress(m => {
+  const P = PP.running; if (!P) return;
+  const c = P.cells[`${m.id}|${m.plate}`]; if (!c) return;
+  Object.assign(c, m);
+  renderProjectProgress();
+});
+async function runProjectCompare(variants) {
+  const plan = PP.plan;
+  const names = Object.fromEntries(variants.map(v => [v.id, v.name]));
+  const cells = {};
+  for (const v of variants) for (const p of plan.plates) cells[`${v.id}|${p.index}`] = { id: v.id, plate: p.index, state: 'waiting' };
+  PP.running = { started: Date.now(), plan, plates: plan.plates, ids: variants.map(v => v.id), names, cells };
+  $('compareBody').innerHTML = `<div class="pp"><div class="pp-head"><b>Slicing the whole project (${plan.plates.length} plates)</b><button class="btn" id="ppCancel">Cancel</button></div>
+    <div class="pp-bar"><span style="width:0%"></span></div><p class="pp-status" id="ppStatus">Starting…</p><div class="pp-wrap"><table class="pp-grid" id="ppGrid"></table></div>
+    <p class="hint">✓ = sliced (print time of that plate), ⚡ = from an earlier slice, ⏳ = slicing now, · = waiting, ✗ = failed (hover over it for the reason).</p></div>`;
+  $('ppCancel').onclick = () => { if (!PP.running) return; PP.running.cancelling = true; $('ppCancel').disabled = true; renderProjectProgress(); api.sliceProjectCancel(); };
+  renderVariantPicks(); renderProjectProgress();
+  const tick = setInterval(renderProjectProgress, 1000);
+  try {
+    const r = await api.sliceProject({ variants: variants.map(({ id, changes, rotations, objectChanges }) => ({ id, changes, rotations, objectChanges })), focusPlate: state.plateIndex });
+    state.compare = { allPlates: true, plates: r.plates, cancelled: r.cancelled, results: r.results.map(x => ({ ...x, name: names[x.id] || VARIANT_NAMES[x.id] })) };
+    state.selectedVariant = state.compare.results.find(x => x.id === 'recommended' && x.ok) ? 'recommended' : state.compare.results.find(x => x.ok)?.id;
+    if (r.cancelled) toast(`Slicing cancelled. ${r.results.filter(x => x.ok).length ? 'The versions with every plate sliced are compared.' : 'No version had every plate sliced yet.'}`, 7000);
+  } catch (e) { state.compare = { error: cleanErr(e) }; }
+  finally { clearInterval(tick); PP.running = null; clearBusy('slice'); }
+  renderCompare(); renderStats(); refreshChecks(); saveSession();
+  const tabBtn = document.querySelector('[data-tab=compare]');
+  if (tabBtn.getAttribute('aria-selected') !== 'true' && state.compare?.results) tabBtn.innerHTML = 'Compare slices<span class="badge">new</span>';
+}
+
 const LOOK_WORDS = ['', 'Rough', 'Visible lines', 'Standard', 'Smooth', 'Very smooth'];
 const STRENGTH_WORDS = ['', 'Light', 'Light–normal', 'Normal', 'Strong', 'Very strong'];
 const meter = (n) => n ? `<span class="meter" aria-label="${n} of 5">${'●'.repeat(n)}<span class="off">${'●'.repeat(5 - n)}</span></span>` : '';
@@ -2068,6 +2162,7 @@ const lookPart = (r, id) => (r.look || []).find(x => x.id === id);
 
 function renderCompare() {
   renderVariantPicks();
+  if (PP.running) return;   // the progress of a whole-project slicing stays on screen
   const c = state.compare, body = $('compareBody');
   if (!c) { body.innerHTML = ''; return; }
   if (c.error) { body.innerHTML = `<div class="error">${esc(c.error)}</div>`; return; }
@@ -2080,10 +2175,10 @@ function renderCompare() {
   // pick something to describe straight away (the first version that isn't the original)
   if (!c.results.some(r => r.ok && r.id === state.selectedVariant)) state.selectedVariant = (c.results.find(r => r.ok && r.id !== 'original') || c.results.find(r => r.ok) || {}).id;
   const tech = state.showTech ?? (level() >= 3);
-  body.innerHTML = `
+  body.innerHTML = `${c.allPlates ? `<p class="hint allp-note"><b>Whole project: ${c.plates.length} plates</b>, printed one after another. Time and filament are all the plates added together${c.cancelled ? '. Slicing was cancelled, so only the versions with every plate sliced are compared' : ''}.</p>` : ''}
     <div class="ctable-head"><span class="hint">${level() <= 1 ? 'Click a version to see what you’ll get and to save or print it.' : 'Click a version for details.'}</span>
       <button class="link" id="techToggle">${tech ? 'Hide' : 'Show'} technical details</button></div>
-    <div class="ctable-wrap"><table class="ctable ${tech ? 'show-tech' : ''}"><thead><tr><th>Version</th><th title="Surface finish: how visible the layer lines are">Look</th><th title="How strong and stiff the part will be">Strength</th><th>Time</th><th>Filament</th><th class="tech">Layers</th><th class="tech" title="Toolhead or filament changes">Swaps</th><th class="tech" title="95th percentile volumetric flow, mm³/s">Flow</th></tr></thead><tbody>
+    <div class="ctable-wrap"><table class="ctable ${tech ? 'show-tech' : ''}"><thead><tr><th>Version</th><th title="Surface finish: how visible the layer lines are">Look</th><th title="How strong and stiff the part will be">Strength</th><th>${c.allPlates ? 'Time (all plates)' : 'Time'}</th><th>Filament</th><th class="tech">Layers</th><th class="tech" title="Toolhead or filament changes">Swaps</th><th class="tech" title="95th percentile volumetric flow, mm³/s">Flow</th></tr></thead><tbody>
     ${c.results.map(r => {
       if (!r.ok) return `<tr><td>${esc(r.name)}</td><td colspan="7" class="err">${esc(r.error)}</td></tr>`;
       const lk = lookPart(r, 'look'), st = lookPart(r, 'strength');
@@ -2093,7 +2188,8 @@ function renderCompare() {
       <td title="${esc(st ? st.text : '')}">${st ? `${meter(st.score)}<span class="mword">${STRENGTH_WORDS[st.score]}</span>` : '—'}</td>
       <td>${hm(r.timeSeconds)}${r.id !== 'original' ? delta(r.timeSeconds, base?.timeSeconds, '', hm) : ''}</td>
       <td>${fmt(r.grams || 0)} g${r.id !== 'original' ? delta(r.grams, base?.grams, ' g', fmt) : ''}</td>
-      <td class="tech">${r.gcode.layers}</td><td class="tech">${r.gcode.toolChanges}</td><td class="tech">${r.gcode.peakFlowP95}</td></tr>`;
+      <td class="tech">${r.gcode.layers}</td><td class="tech">${r.gcode.toolChanges}</td><td class="tech">${r.gcode.peakFlowP95}</td></tr>${r.allPlates && r.plates ? `
+      <tr data-v="${r.id}" class="prow ${r.id === state.selectedVariant ? 'sel' : ''}"><td colspan="8">${r.plates.map(p => `<span class="pt">Plate ${p.index}: <b>${esc(hm(p.timeSeconds))}</b></span>`).join('')}<span class="pt ptotal">Whole project: <b>${esc(hm(r.timeSeconds))}</b></span></td></tr>` : ''}`;
     }).join('')}
   </tbody></table></div><div id="variantDetail"></div>`;
   $('techToggle').onclick = () => { state.showTech = !tech; renderCompare(); };
@@ -2113,10 +2209,18 @@ function renderCompare() {
     })() : ''}
     <h3>What you’ll get with “${esc(sel.name)}”</h3>
     <div class="look-cards">${cards || '<p class="hint">Descriptions appear after slicing.</p>'}</div>
-    <p class="hint">${esc(hm(sel.timeSeconds))} to print, ${fmt(sel.grams || 0)} g of filament${base && sel.id !== 'original' ? ` (original: ${esc(hm(base.timeSeconds))}, ${fmt(base.grams || 0)} g)` : ''}.</p>
+    <p class="hint">${esc(hm(sel.timeSeconds))} to print${sel.allPlates ? ` all ${sel.plates.length} plates` : ''}, ${fmt(sel.grams || 0)} g of filament${base && sel.id !== 'original' ? ` (original: ${esc(hm(base.timeSeconds))}, ${fmt(base.grams || 0)} g)` : ''}.</p>
+    ${sel.allPlates ? (() => {
+      const bp = (n) => base && base.plates ? base.plates.find(p => p.index === n) : null;
+      return `<h3>Plate by plate</h3><div class="pp-wrap"><table class="plate-table"><thead><tr><th>Plate</th><th>Time</th><th>Filament</th><th>Layers</th><th></th></tr></thead><tbody>
+      ${sel.plates.map(p => `<tr><td>Plate ${p.index}${p.name ? `: ${esc(p.name)}` : ''}${p.index === state.plateIndex ? ' (shown)' : ''}</td><td>${esc(hm(p.timeSeconds))}${sel.id !== 'original' && bp(p.index) ? delta(p.timeSeconds, bp(p.index).timeSeconds, '', hm) : ''}</td><td>${fmt(p.grams || 0)} g</td><td>${p.layers}</td>
+        <td><button class="link" data-sendplate="${p.index}">Send…</button></td></tr>`).join('')}
+      <tr><td><b>All plates</b></td><td><b>${esc(hm(sel.timeSeconds))}</b></td><td><b>${fmt(sel.grams || 0)} g</b></td><td></td><td></td></tr></tbody></table></div>
+      <p class="hint">A printer prints one plate at a time: <b>Send</b> sends that plate. <b>Save as 3MF</b> saves the whole project, every plate.</p>`;
+    })() : ''}
     ${sel.warnings.length ? `<ul class="warn-list">${sel.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
     <h3>Use “${esc(sel.name)}”</h3>
-    <div class="row-btns" id="useButtons"><button class="btn primary" id="save3mfVariant">Save as 3MF</button> <button class="btn" id="sendVariant">Send to printer…</button> <button class="btn" id="orcaVariant">Open in slicer</button> <button class="btn" id="bambuVariant" title="Save a Bambu Studio version of this one, to share on MakerWorld">For MakerWorld (Bambu)…</button></div>
+    <div class="row-btns" id="useButtons"><button class="btn primary" id="save3mfVariant">Save as 3MF</button> <button class="btn" id="sendVariant">${sel.allPlates ? `Send plate ${state.plateIndex} to printer…` : 'Send to printer…'}</button> <button class="btn" id="orcaVariant">Open in slicer</button> <button class="btn" id="bambuVariant" title="Save a Bambu Studio version of this one, to share on MakerWorld">For MakerWorld (Bambu)…</button></div>
     <p class="hint"><b>Save as 3MF</b> saves the model with this version’s settings built in, ready to open in your slicer and print. <button class="link" id="saveGcode">Save the G-code instead</button> (advanced: the finished print file, only needed to upload to a printer yourself, e.g. with Fluidd or a USB stick).</p>
     <details class="time-details" ${level() >= 3 ? 'open' : ''}><summary>Where the print time goes</summary>
       <div class="feature-bars">${feats.map(f => `<div class="fbar"><span>${esc(f.name)}</span><span class="track"><span class="fill" style="width:${Math.round(f.timeShare * 100)}%"></span></span><span class="n">${Math.round(f.timeShare * 100)}%, ${f.flowP95} mm³/s</span></div>`).join('')}</div>
@@ -2128,9 +2232,14 @@ function renderCompare() {
   $('sendVariant').onclick = () => { openSend(sel.id); guideEvent('saved'); };
   $('orcaVariant').onclick = () => openInOrca(sel.id);
   $('saveGcode').onclick = async () => {
-    try { const p = await api.saveGcode({ variantId: sel.id, name: sel.name }); if (p) toast('G-code saved.', 5000, () => api.showInFolder(p)); }
+    try { const p = await api.saveGcode({ variantId: sel.id, name: sel.name, plateIndex: sel.allPlates ? state.plateIndex : null }); if (p) toast(sel.allPlates ? `G-code of plate ${state.plateIndex} saved.` : 'G-code saved.', 5000, () => api.showInFolder(p)); }
     catch (e) { toast(cleanErr(e), 6000); }
   };
+  body.querySelectorAll('[data-sendplate]').forEach(b => b.onclick = async () => {
+    const n = Number(b.dataset.sendplate);
+    if (n !== state.plateIndex) { state.plateIndex = n; $('plateSelect').value = String(n); await loadPlate(); renderCompare(); }
+    openSend(sel.id); guideEvent('saved');
+  });
 }
 
 // ---------- history ----------
