@@ -126,7 +126,7 @@ async function openFile(promise, restore = null, opts = {}) {
     // a new model starts with an empty "What is this part for?" (a restored session brings its own back below)
     if (!restore) $('purpose').value = '';
     if (!restore) { state.ifaceChoice = null; $('ifaceOpposite').checked = false; }
-    Object.assign(state, { file: info, result: null, objects: null, objPlan: null, compare: null, rotations: {}, checks: [], orientObj: null, assemblyChoice: null, blockersOn: false, remixApplied: false, swapUndo: null });
+    Object.assign(state, { file: info, result: null, objects: null, objPlan: null, compare: null, rotations: {}, checks: [], orientObj: null, assemblyChoice: null, blockersOn: false, remixApplied: false, swapUndo: null, filePic: null });
     resetRemix(); swReset();
     state.slots = initialSlots(info.filaments);
     state.mixes = info.mixes || [];
@@ -1009,9 +1009,11 @@ $('bxLocate').onclick = async () => { if (await api.bambuLocate()) openBambuExpo
 $('bxExport').onclick = async () => {
   const def = variantDef($('bxVersion').value);
   try { localStorage.setItem('bambuPrinter', $('bxPrinter').value); } catch { /* only a convenience */ }
+  const pic = await fileThumbs(true);
+  if (!pic) return;
   $('bxExport').disabled = true; $('bxStatus').textContent = 'Converting and exporting with Bambu Studio… (a minute or two)';
   try {
-    const r = await withBusy('bambu', 'Exporting for Bambu Lab…', () => api.exportBambu({ machine: $('bxPrinter').value, changes: def.changes, objectChanges: def.objectChanges || null, rotations: def.rotations || state.rotations, plateIndex: state.plateIndex, variantName: def.name, thumbs: fileThumbs() }));
+    const r = await withBusy('bambu', 'Exporting for Bambu Lab…', () => api.exportBambu({ machine: $('bxPrinter').value, changes: def.changes, objectChanges: def.objectChanges || null, rotations: def.rotations || state.rotations, plateIndex: state.plateIndex, variantName: def.name, ...pic }));
     if (r) { $('bambuDialog').close(); toast(`Saved the ${r.machine.replace(/ 0\.4 nozzle$/, '')} version (${r.how})${r.mixes ? `. ${r.mixes === 1 ? 'The color mix is' : `The ${r.mixes} color mixes are`} now ${r.mixes === 1 ? 'a filament' : 'filaments'} of ${r.mixes === 1 ? 'its' : 'their'} own in the blended color, so it needs ${r.filaments} filaments in the AMS` : ''}.${r.moved ? ` The model was moved ${r.moved} mm on the plate to make room for the purge tower.` : ''} It’s a Bambu Studio project, ready to upload to MakerWorld.`, 10000, () => api.showInFolder(r.path)); }
     else $('bxStatus').textContent = '';
   } catch (e) { $('bxStatus').textContent = cleanErr(e); }
@@ -1152,7 +1154,8 @@ function renderFileInfo() {
   ['thumbBlock', 'plateBlock', 'materialBlock', 'prefBlock', 'viewerTools', 'sceneBar'].forEach(id => $(id).classList.remove('hidden'));
   $('viewerEmpty').classList.add('hidden');
   const imgs = f.images.filter(i => !/pick|small/i.test(i.label));
-  $('thumbBlock').classList.toggle('hidden', !imgs.length);
+  $('thumbs').classList.toggle('hidden', !imgs.length);
+  renderFilePicLine();
   $('thumbs').innerHTML = imgs.map((i, n) => `<button data-n="${n}" title="${esc(i.label)}"><img src="${i.dataUrl}" alt="${esc(i.label)}"></button>`).join('');
   $('thumbs').querySelectorAll('button').forEach(b => b.onclick = () => {
     const i = imgs[Number(b.dataset.n)];
@@ -1856,8 +1859,101 @@ const refreshChecks = debounce(async () => {
     : '<p class="ok-line">Safety checks passed: flow, temperatures, cooling and supports look consistent.</p>');
 }, 300);
 
-// pictures of the model for the saved file's thumbnail (what Windows Explorer and the slicer's plate list show)
-function fileThumbs() { try { return viewer.thumbnails([512, 256, 128]); } catch { return []; } }
+// ---------- the saved file's picture ----------
+// What Windows Explorer, the slicer's plate list and MakerWorld show for a saved 3MF: the file's own thumbnail or
+// photos, a render from the app's 3D view, or the person's own photo, made into the 512/256/128 px PNGs a 3MF uses.
+const FP_SIZES = [512, 256, 128];
+function renderThumbs() { try { return viewer.thumbnails(FP_SIZES); } catch { return []; } }
+// the file's own pictures that make sense as its cover (not the slicer's pick maps, top views or small copies)
+function filePicCandidates() {
+  const f = state.file; if (!f) return [];
+  const rank = (n) => (/\.thumbnails\/thumbnail_3mf|^Metadata\/thumbnail\./i.test(n) ? 0 : n === `Metadata/plate_${state.plateIndex}.png` ? 1 : /^Metadata\/plate_\d+\.png$/i.test(n) ? 2 : 3);
+  const name = (i) => { const r = rank(i.name); return r === 0 ? 'The file’s own thumbnail' : r < 3 ? `${i.label} picture (from the slicer)` : `Photo: ${i.label}`; };
+  return (f.images || []).filter(i => /\.(png|jpe?g)$/i.test(i.name) && !/pick_|top_|no_light|_small|thumbnail_(middle|small)|^Metadata\/.*\/|bbl_thumbnail/i.test(i.name))
+    .sort((a, b) => rank(a.name) - rank(b.name)).map(i => ({ id: 'f:' + i.name, kind: 'file', label: name(i), src: i.dataUrl }));
+}
+// a picture made square: "fill" crops it to the square, otherwise all of it is shown on a transparent background
+function loadImage(src) { return new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => bad(new Error('That picture can’t be read. Use a PNG, JPEG, WebP, GIF or BMP.')); im.src = src; }); }
+async function squareThumbs(src, fill) {
+  const im = await loadImage(src), w = im.naturalWidth, h = im.naturalHeight;
+  return FP_SIZES.map(n => {
+    const c = document.createElement('canvas'); c.width = n; c.height = n;
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+    const s = fill ? Math.max(n / w, n / h) : Math.min(n / w, n / h), dw = w * s, dh = h * s;
+    g.drawImage(im, (n - dw) / 2, (n - dh) / 2, dw, dh);
+    return { w: n, h: n, dataUrl: c.toDataURL('image/png') };
+  });
+}
+function defaultFilePic() { const c = filePicCandidates()[0]; return c ? { ...c, fill: false } : { id: 'render', kind: 'render', label: 'The 3D view' }; }
+function filePicName(p) { return p.kind === 'render' ? 'a picture of the 3D view' : p.kind === 'mine' ? 'your photo' : p.label.replace(/^The file’s own/, 'the file’s own').replace(/^Photo: /, 'the photo ').replace(/^(Plate \d+) picture/, 'the $1 picture'); }
+function renderFilePicLine() {
+  const p = state.filePic || defaultFilePic();
+  $('fpLine').innerHTML = `Saved files get ${esc(filePicName(p))}${state.filePic ? '' : ' (you’re asked when you save)'}. <button type="button" id="fpChange">Change…</button>`;
+  $('fpChange').onclick = () => chooseFilePic(true);
+}
+// ask = true: the dialog opens unless a picture was already chosen for this model; null = cancelled
+async function fileThumbs(ask = false) {
+  let p = state.filePic;
+  if (!p && ask) { p = await chooseFilePic(false); if (!p) return null; }
+  if (!p) p = defaultFilePic();
+  if (p.kind === 'render') return { thumbs: renderThumbs(), thumbPlate: false };
+  try { return { thumbs: await squareThumbs(p.src, p.fill), thumbPlate: true }; } catch { return { thumbs: renderThumbs(), thumbPlate: false }; }
+}
+const FP = { pick: null, mine: null, done: null };
+function chooseFilePic(changeOnly) {
+  const dlg = $('filePicDialog'), cur = state.filePic || defaultFilePic();
+  FP.pick = cur.id; FP.mine = cur.kind === 'mine' ? cur : FP.mine;
+  $('fpFill').checked = !!cur.fill;
+  $('fpRememberRow').classList.toggle('hidden', changeOnly);
+  $('fpOk').textContent = changeOnly ? 'Use this picture' : 'Save with this picture';
+  FP.changeOnly = changeOnly;
+  renderFilePicGrid();
+  dlg.showModal();
+  return new Promise(ok => { FP.done = ok; });
+}
+function filePicTiles() {
+  let render = ''; try { render = viewer.thumbnails([256])[0].dataUrl; } catch { /* no 3D view yet */ }
+  return [...filePicCandidates(), { id: 'render', kind: 'render', label: 'The 3D view (made by the app)', src: render }, ...(FP.mine ? [FP.mine] : [])];
+}
+function renderFilePicGrid() {
+  const tiles = filePicTiles();
+  if (!tiles.some(t => t.id === FP.pick)) FP.pick = tiles[0].id;
+  const g = $('fpGrid'); g.classList.toggle('fill', $('fpFill').checked);
+  g.innerHTML = tiles.map(t => `<button type="button" data-id="${esc(t.id)}" aria-pressed="${t.id === FP.pick}"><div class="fp-img">${t.src ? `<img src="${t.src}" alt="">` : '🧊'}</div><span>${esc(t.label)}</span></button>`).join('')
+    + '<button type="button" data-id="add"><div class="fp-img">📷</div><span>Your own photo…</span></button>';
+  g.querySelectorAll('button').forEach(b => b.onclick = () => { if (b.dataset.id === 'add') return $('fpFile').click(); FP.pick = b.dataset.id; renderFilePicGrid(); });
+}
+async function takeFilePicFile(file) {
+  if (!file || !/^image\//.test(file.type)) { toast('That isn’t a picture. Use a PNG, JPEG, WebP, GIF or BMP.', 5000); return; }
+  try {
+    const url = await new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = bad; r.readAsDataURL(file); });
+    // kept at 1024 px at most (the file's pictures are 512 px)
+    const im = await loadImage(url), s = Math.min(1, 1024 / Math.max(im.naturalWidth, im.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * s); c.height = Math.round(im.naturalHeight * s);
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(im, 0, 0, c.width, c.height);
+    FP.mine = { id: 'mine', kind: 'mine', label: `Your photo: ${file.name}`, src: c.toDataURL('image/png') };
+    FP.pick = 'mine';
+    if (Math.abs(im.naturalWidth - im.naturalHeight) > Math.min(im.naturalWidth, im.naturalHeight) * 0.15 && !$('fpFill').checked) $('fpFill').checked = true;
+    renderFilePicGrid();
+  } catch (e) { toast(cleanErr(e), 6000); }
+}
+$('fpFile').onchange = (e) => { takeFilePicFile(e.target.files[0]); e.target.value = ''; };
+$('fpFill').onchange = () => renderFilePicGrid();
+{
+  const dlg = $('filePicDialog');
+  dlg.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); dlg.classList.add('dragging'); });
+  dlg.addEventListener('dragleave', (e) => { if (!e.relatedTarget || !dlg.contains(e.relatedTarget)) dlg.classList.remove('dragging'); });
+  dlg.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); dlg.classList.remove('dragging'); takeFilePicFile([...e.dataTransfer.files].find(f => /^image\//.test(f.type))); });
+  const finish = (val) => { const d = FP.done; FP.done = null; if (dlg.open) dlg.close(); if (d) d(val); };
+  $('fpClose').onclick = () => finish(null);
+  dlg.addEventListener('close', () => finish(null));
+  $('fpOk').onclick = () => {
+    const t = filePicTiles().find(x => x.id === FP.pick) || defaultFilePic();
+    const pick = { id: t.id, kind: t.kind, label: t.label, src: t.kind === 'render' ? null : t.src, fill: $('fpFill').checked };
+    if (FP.changeOnly || $('fpRemember').checked) { state.filePic = pick; renderFilePicLine(); }
+    finish(pick);
+  };
+}
 
 // variantId: a version from Compare slices; none = the recommendations with the checked rows
 async function save3mf(variantId = null, opts = {}) {
@@ -1869,7 +1965,9 @@ async function save3mf(variantId = null, opts = {}) {
     const changes = opts.noAI ? [] : def ? def.changes : rec.changes;
     const objectChanges = opts.noAI ? null : def ? (def.objectChanges || null) : rec.objectChanges;
     if (!(await fitConfirm([...changes, ...Object.values(objectChanges || {}).flat()]))) return;
-    const out = await api.save3mf({ changes, objectChanges, rotations: def ? (def.rotations || state.rotations) : state.rotations, slider: Number($('slider').value), purpose: $('purpose').value.trim(), plateIndex: state.plateIndex, variantName: def ? def.name : (opts.name || null), thumbs: fileThumbs() });
+    const pic = await fileThumbs(!opts.quiet);
+    if (!pic) return;
+    const out = await api.save3mf({ changes, objectChanges, rotations: def ? (def.rotations || state.rotations) : state.rotations, slider: Number($('slider').value), purpose: $('purpose').value.trim(), plateIndex: state.plateIndex, variantName: def ? def.name : (opts.name || null), ...pic });
     if (out) {
       const n = out.fixes.length + out.corrections.length;
       if (opts.quiet) return out;
@@ -2142,7 +2240,8 @@ async function openInOrca(variantId) {
   const def = variantId ? variantDef(variantId) : { id: 'current', name: state.result ? 'Recommended' : 'Current', ...(state.result ? recChanges() : { changes: [], objectChanges: null }), rotations: state.rotations };
   if (!(await fitConfirm([...def.changes, ...Object.values(def.objectChanges || {}).flat()]))) return;
   try {
-    const r = await withBusy('orca', 'Writing the project and starting Snapmaker Orca…', () => api.openInOrca({ changes: def.changes, objectChanges: def.objectChanges || null, rotations: def.rotations, plateIndex: state.plateIndex, variantName: def.name, thumbs: fileThumbs() }));
+    const pic = await fileThumbs(false);
+    const r = await withBusy('orca', 'Writing the project and starting Snapmaker Orca…', () => api.openInOrca({ changes: def.changes, objectChanges: def.objectChanges || null, rotations: def.rotations, plateIndex: state.plateIndex, variantName: def.name, ...pic }));
     if (!r) return;
     const name = r.path.split(/[\\/]/).pop();
     const big = state.analysis && state.analysis.totals.triangles > 300000;

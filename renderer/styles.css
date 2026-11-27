@@ -599,6 +599,18 @@ body[data-level="3"] .tip-btn, body[data-level="3"] .beginner-only { display: no
 dialog.bambu { width: min(560px, 94vw); padding: 0; }
 .bx-body { padding: 14px 20px 18px; font-size: 14px; }
 .bx-body .field { margin-top: 10px; }
+dialog.fpic { width: min(640px, 94vw); padding: 0; }
+.fp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; margin: 10px 0 12px; }
+.fp-grid button { border: 2px solid var(--line); background: var(--viewer-bg); border-radius: var(--radius-s); padding: 0 0 4px; cursor: pointer; color: var(--ink); font: inherit; font-size: 12px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; text-align: center; }
+.fp-grid button .fp-img { aspect-ratio: 1; width: 100%; display: flex; align-items: center; justify-content: center; font-size: 30px; }
+.fp-grid button img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.fp-grid.fill button img { object-fit: cover; }
+.fp-grid button[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.fp-grid button span { padding: 0 4px; line-height: 1.25; }
+.fp-opt { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin-top: 6px; }
+dialog.fpic.dragging .fp-grid { outline: 2px dashed var(--accent); outline-offset: 4px; }
+.fp-line { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+.fp-line button { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
 
 .blocker-offer { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: var(--radius-s); background: var(--raised); }
 .blocker-offer .fit-check { margin-top: 0; }

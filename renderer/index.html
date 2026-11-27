@@ -62,6 +62,7 @@
       <section class="block hidden" id="thumbBlock">
         <h2>Pictures in this file</h2>
         <div class="thumbs" id="thumbs"></div>
+        <div class="fp-line" id="fpLine"></div>
       </section>
 
       <section class="block hidden" id="plateBlock">
@@ -695,6 +696,18 @@
       <p class="hint" id="bxStatus"></p>
       <p class="hint">Not test-printed on that printer? Say so in your MakerWorld description (e.g. “converted from a tested Snapmaker U1 profile”).</p>
       <div class="row-btns"><button class="btn primary" id="bxExport">Export</button> <button class="btn hidden" id="bxLocate">Locate Bambu Studio…</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="filePicDialog" class="fpic">
+    <div class="sd-head"><h2>Picture for the saved file</h2><button class="btn ghost" id="fpClose">Cancel</button></div>
+    <div class="bx-body">
+      <p class="hint" style="margin-top:0">The picture Windows Explorer, the slicer's project list and MakerWorld show for the file. Pick one, or use your own photo (you can also drop a picture here).</p>
+      <div class="fp-grid" id="fpGrid"></div>
+      <label class="fp-opt"><input type="checkbox" id="fpFill"> <span>Crop the picture to fill the square (otherwise all of it is shown)</span></label>
+      <label class="fp-opt" id="fpRememberRow"><input type="checkbox" id="fpRemember" checked> <span>Use it for every save of this model (change it under <b>Pictures in this file</b>)</span></label>
+      <div class="row-btns"><button class="btn primary" id="fpOk">Save with this picture</button></div>
+      <input type="file" id="fpFile" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
     </div>
   </dialog>
 

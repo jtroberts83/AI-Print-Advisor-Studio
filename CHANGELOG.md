@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.57.0
+- **Picture for the saved file**: Save as 3MF and Export for Bambu Lab now ask which picture the file gets (the one
+  Windows Explorer, the slicer's project list and MakerWorld show). The file's own thumbnail is picked by default,
+  so it is kept; you can also choose its plate picture or photos, a picture of the app's 3D view, or **your own
+  photo** (choose it or drop it on the window), shown whole or cropped to fill the square. The app makes the 512,
+  256 and 128 px pictures and the plate picture a 3MF needs. The choice is kept for every save of that model (change
+  it under **Pictures in this file**); Open in Snapmaker Orca uses it without asking.
+
 ## 2.56.0
 - Filament, **🛒 From Amazon** and the daily check: an order you already added from a screenshot or by hand is now
   spotted too. When you have that filament (same brand, type and color) with spools bought from 3 days before the

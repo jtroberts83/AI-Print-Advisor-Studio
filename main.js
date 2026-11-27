@@ -927,7 +927,7 @@ async function gcodeSettings(file) {
   } catch { return null; }
 }
 
-ipcMain.handle('save-3mf', async (_e, { changes, objectChanges, rotations, slider, purpose, plateIndex, variantName, thumbs }) => { await S.ready;
+ipcMain.handle('save-3mf', async (_e, { changes, objectChanges, rotations, slider, purpose, plateIndex, variantName, thumbs, thumbPlate }) => { await S.ready;
   if (S.base) assertRightPrinter();
   if (!S.base) throw new Error('Open a .3mf file first.');
   // A plain model with no slicer available: wrap it as a U1 project from the bundled template instead of refusing.
@@ -944,7 +944,7 @@ ipcMain.handle('save-3mf', async (_e, { changes, objectChanges, rotations, slide
   if (r.canceled || !r.filePath) return null;
   const fin = finalize(changes, plateIndex, rotations, objectChanges);
   const built = await Slicer.buildVariantDetailed(baseBuffer, { changes: fin.changes, objectChanges: fin.objectChanges, rotations: rotations || {}, project: baseBuffer === S.base.buffer ? S.base.project : null });
-  built.buffer = await addPackageThumbnails(built.buffer, thumbs, plateIndex || 1).catch(() => built.buffer);
+  built.buffer = await addPackageThumbnails(built.buffer, thumbs, plateIndex || 1, !!thumbPlate).catch(() => built.buffer);
   built.buffer = await stampPrintName(built.buffer, r.filePath).catch(() => built.buffer);
   await fs.writeFile(r.filePath, built.buffer);
   await S.printLog.addRun({ file: path.basename(r.filePath), modelPath: r.filePath, source: path.basename(S.filePath), changes: fin.changes.map(c => ({ key: c.key, value: c.value, slot: c.slot || null })), rotated: Object.keys(rotations || {}).length, slots: S.slots, slider, purpose });
@@ -1195,9 +1195,10 @@ async function stampPrintName(buffer, filePath) {
 // ---------- file thumbnails ----------
 // Windows Explorer (and Finder previews) show a 3MF's "package thumbnail": a picture the file's _rels/.rels
 // declares with the standard thumbnail relationship. Bambu/Orca files also declare medium and small cover images.
-// Saved files get a render of the model from the app's 3D view in all three, and the shown plate's placeholder
-// picture is replaced so the slicer's plate list shows the model too.
-async function addPackageThumbnails(buffer, thumbs, plateIndex = 1) {
+// Saved files get the picture the person chose (the file's own thumbnail or photo, their own photo, or a render
+// from the app's 3D view) in all three. A chosen picture also becomes the shown plate's picture (plate: true); a 3D
+// view render only replaces the app's gray placeholder there, so the slicer's plate list shows the model too.
+async function addPackageThumbnails(buffer, thumbs, plateIndex = 1, plate = false) {
   const pick = (w) => (thumbs || []).find(t => t.w === w);
   const toBuf = (t) => (t && /^data:image\/png;base64,/.test(t.dataUrl) ? Buffer.from(t.dataUrl.split(',')[1], 'base64') : null);
   const large = toBuf(pick(512)), middle = toBuf(pick(256)) || large, small = toBuf(pick(128)) || middle;
@@ -1208,7 +1209,7 @@ async function addPackageThumbnails(buffer, thumbs, plateIndex = 1) {
   zip.file('Auxiliaries/.thumbnails/thumbnail_small.png', small);
   const plateImg = `Metadata/plate_${plateIndex}.png`;
   const existing = zip.file(plateImg) && (await zip.file(plateImg).async('base64'));
-  if (!existing || existing === PLACEHOLDER_BASE64) zip.file(plateImg, large);
+  if (plate || !existing || existing === PLACEHOLDER_BASE64) zip.file(plateImg, large);
   // declare them in the package relationships (replacing any older thumbnail entries)
   let rels = zip.file('_rels/.rels') ? await zip.file('_rels/.rels').async('string') : '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>';
   rels = rels.replace(/\s*<Relationship\b[^>]*Type="[^"]*(metadata\/thumbnail|cover-thumbnail-middle|cover-thumbnail-small)"[^>]*\/>/g, '');
@@ -1309,7 +1310,7 @@ ipcMain.handle('bambu-locate', async () => {
   const cfg = await readConfig(); cfg.bambuPath = r.filePaths[0]; await writeConfig(cfg);
   return r.filePaths[0];
 });
-ipcMain.handle('export-bambu', async (_e, { machine, changes, objectChanges, rotations, plateIndex, variantName, thumbs }) => { await S.ready;
+ipcMain.handle('export-bambu', async (_e, { machine, changes, objectChanges, rotations, plateIndex, variantName, thumbs, thumbPlate }) => { await S.ready;
   if (!S.base) throw new Error('Open a model first.');
   assertRightPrinter();
   const exe = await findBambuStudio();
@@ -1395,7 +1396,7 @@ ipcMain.handle('export-bambu', async (_e, { machine, changes, objectChanges, rot
     progress('Saving it with Bambu Studio…');
     out = await slicer.exportRoundTrip(await z.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
   } finally { setMachine(saved); }
-  out = await addPackageThumbnails(out, thumbs, plateIndex || 1).catch(() => out);
+  out = await addPackageThumbnails(out, thumbs, plateIndex || 1, !!thumbPlate).catch(() => out);
   const short = lib.machine.replace(/^Bambu Lab\s+/, '').replace(/\s+[\d.]+ nozzle$/, '');
   const r = await dialog.showSaveDialog(win, { title: `Save the ${short} version`, defaultPath: path.join(path.dirname(S.filePath), `${printName()}${advisorStamp(`Bambu ${short}`)}.3mf`), filters: [{ name: '3MF project', extensions: ['3mf'] }] });
   if (r.canceled || !r.filePath) return null;
@@ -2577,7 +2578,7 @@ function watchOrcaFile(file, writtenHash) {
   });
 }
 
-ipcMain.handle('open-in-orca', async (_e, { changes, objectChanges, rotations, plateIndex, variantName, thumbs }) => { await S.ready;
+ipcMain.handle('open-in-orca', async (_e, { changes, objectChanges, rotations, plateIndex, variantName, thumbs, thumbPlate }) => { await S.ready;
   if (S.base) assertRightPrinter();
   if (!S.base) throw new Error('Open a .3mf file first.');
   const exe = S.slicer && S.slicer.exe;
@@ -2600,7 +2601,7 @@ ipcMain.handle('open-in-orca', async (_e, { changes, objectChanges, rotations, p
       if (c.response === 1) target = nextFreeCopy(target);
     }
   }
-  built.buffer = await addPackageThumbnails(built.buffer, thumbs, plateIndex || 1).catch(() => built.buffer);
+  built.buffer = await addPackageThumbnails(built.buffer, thumbs, plateIndex || 1, !!thumbPlate).catch(() => built.buffer);
   built.buffer = await stampPrintName(built.buffer, target).catch(() => built.buffer);
   await fs.writeFile(target, built.buffer);
   watchOrcaFile(target, sha1(built.buffer));
