@@ -1283,6 +1283,14 @@ async function stampPrintName(buffer, filePath) {
   if (psf) {
     const ps = JSON.parse(await psf.async('string'));
     ps.filename_format = `${name}.gcode`;
+    // Snapmaker Orca keeps only the settings listed here (for the process: entry 0) and takes every other one from
+    // its own system profile, so an unlisted name was dropped and its default template used instead
+    // ({filament_type[initial_tool]}…, which can fail with "Non-integer index is not allowed").
+    const diff = ps.different_settings_to_system;
+    if (Array.isArray(diff) && diff.length) {
+      const keys = String(diff[0] || '').split(';').filter(Boolean);
+      if (!keys.includes('filename_format')) diff[0] = [...keys, 'filename_format'].join(';');
+    }
     zip.file('Metadata/project_settings.config', JSON.stringify(ps, null, 4));
   }
   // the project title

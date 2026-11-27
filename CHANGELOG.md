@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.59.2
+- **Fixed: Snapmaker Orca could refuse to send a print** with "Processing of the filename_format template failed …
+  Non-integer index is not allowed to address a vector variable". The app names the G-code after the saved file,
+  but Snapmaker Orca only keeps the settings a project marks as changed and took its own name template instead
+  (`{input_filename_base}_{filament_type[initial_tool]}_{print_time}.gcode`), which can fail. The name is now marked
+  as changed, so Orca uses it (and keeps it when you save the project in Orca). Save or open the file from the app
+  again to get the fix.
+
 ## 2.59.1
 - The certificate page remembers its open sections in a simpler way (only their names). Nothing else changed.
 
