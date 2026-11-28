@@ -1869,15 +1869,24 @@ function renderShot() {
   </div>`;
 }
 const missingPhotos = r => r.items.filter(it => it.on && !(it.photo && it.usePhoto) && String(it.brand).trim() && String(it.color).trim());
+// Amazon list: "Only show filament not in my library" hides the rows already added (this order's product, or probably
+// added by hand), so filament missed by earlier imports is easy to find. Remembered; hidden rows are never added.
+const onlyMissing = () => { try { return localStorage.getItem('aipa.amzOnlyMissing') === '1'; } catch { return false; } };
+const rowHidden = (it) => !!(it.inLib && onlyMissing());
 function reviewHtml(r) {
   if (!r.items.length) return `<div class="empty" style="padding:30px 10px">No filament found.${r.notes ? '<br>' + esc(r.notes) : ''}</div>`;
   const fil = allFilaments();
   const opt = (list, v) => list.map(x => `<option ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('');
   const brands = [...new Set(fil.map(f => f.brand))].sort();
-  return `<datalist id="shotBrands">${brands.map(b => `<option value="${esc(b)}">`).join('')}</datalist>
+  const amz = r.items.some(it => 'inLib' in it), had = r.items.filter(it => it.inLib).length, hidden = r.items.filter(rowHidden).length;
+  const shown = r.items.length - hidden;
+  return `${amz ? `<div class="actions" style="margin-top:12px;align-items:center"><label style="font-size:14px" title="Hides the rows already in your library (added from this order before, or probably added by hand), so filament missed by earlier imports stands out"><input type="checkbox" data-amzmissing ${onlyMissing() ? 'checked' : ''}> Only show filament not already in my library</label>
+    <span class="muted" style="font-size:13px">${had ? `${had} of ${r.items.length} already in your library${hidden ? ', hidden' : ''}` : 'None of these are in your library yet'}</span></div>` : ''}
+  ${amz && !shown ? '<div class="empty" style="padding:24px 10px">Everything in these orders is already in your library. Untick the box above to see it.</div>' : ''}
+  <datalist id="shotBrands">${brands.map(b => `<option value="${esc(b)}">`).join('')}</datalist>
   <div class="tablewrap" style="margin-top:14px;overflow:auto"><table class="review"><thead><tr>
     <th></th><th>Photo</th><th></th><th style="width:20%">Color</th><th>Brand</th><th>Type</th><th>Product line</th><th>Finish</th><th>g / spool</th><th>Spools</th><th>$ each</th><th>Status</th></tr></thead><tbody>
-  ${r.items.map((it, i) => { const ex = findExisting(it, fil); return `<tr data-i="${i}">
+  ${r.items.map((it, i) => { if (rowHidden(it)) return ''; const ex = findExisting(it, fil); return `<tr data-i="${i}">
     <td><input type="checkbox" data-k="on" ${it.on ? 'checked' : ''} title="Add this one"></td>
     <td>${it.photo ? `<label class="ph" title="${it.photoPage ? (it.photoExact ? 'Product photo from the brand’s store' : 'Photo of the product line from the brand’s store (no photo of this exact color)') : 'Product photo cut from the screenshot'}. Untick to leave it out."><img src="${it.photo}" alt=""><span><input type="checkbox" data-k="usePhoto" ${it.usePhoto ? 'checked' : ''}> use</span></label>
       ${it.photoPage ? `<a class="phsrc" href="${esc(it.photoPage)}" target="_blank" rel="noopener">${it.photoExact ? 'from store' : 'store · line photo'}</a>` : ''}` : '<span class="muted" style="font-size:12px">none</span>'}</td>
@@ -1897,7 +1906,7 @@ function reviewHtml(r) {
     <label class="muted" style="font-size:13px">Put in-stock spools in
       <select class="sel" data-shotloc><option value="">— no location —</option>${state.locations.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label>
     <span style="flex:1"></span>
-    <span class="muted" style="font-size:13px">${r.items.length} found · read in ${Math.round(r.secs)} s · cost about ${fmt$(r.cost)}</span>
+    <span class="muted" style="font-size:13px">${r.items.length} found${hidden ? ` · ${shown} shown` : ''} · read in ${Math.round(r.secs)} s · cost about ${fmt$(r.cost)}</span>
     <button class="btn primary" data-shotadd>Add checked filament</button>
   </div>
   <div class="actions" style="align-items:center;margin-top:8px">
@@ -1910,7 +1919,7 @@ function addFromShot() {
   const loc = $('[data-shotloc]')?.value || '';
   let newFil = 0, spools = 0, skipped = 0;
   shot.result.items.forEach((it, n) => {
-    if (!it.on) return;
+    if (!it.on || rowHidden(it)) return;
     if (!String(it.color).trim() || !String(it.brand).trim()) { skipped++; return; }
     let f = findExisting(it, allFilaments());
     if (!f) {
@@ -2004,7 +2013,7 @@ function amazonRows(lines, rows, storeDomain) {
   const claimed = new Set();
   return rows.map(it => {
     const s = lines[it.line_no], had = amazonHad(s), maybe = had ? 0 : probablyAdded(it, s.date, claimed);
-    return { ...it, src: s, on: !had && !maybe, store: `Amazon (${String(storeDomain).replace(/^amazon\./, '')})`, order_date: s.date, status: s.ordered ? 'ordered' : 'new',
+    return { ...it, src: s, on: !had && !maybe, inLib: had ? 'order' : maybe ? 'maybe' : '', store: `Amazon (${String(storeDomain).replace(/^amazon\./, '')})`, order_date: s.date, status: s.ordered ? 'ordered' : 'new',
       photo: s.photo, usePhoto: !!s.photo, amz: `${s.order}|${s.asin}`, asin: s.asin, url: s.url,
       note: [had ? 'Already in your inventory (this order). Tick it to add it again.'
         : maybe ? `Probably added already (from a screenshot or by hand): you have ${maybe} spool${maybe === 1 ? '' : 's'} of it bought around ${fmtDate(s.date)}. Tick it to add it anyway.` : '', it.note].filter(Boolean).join(' ') };
@@ -2157,6 +2166,7 @@ $('#overlay').addEventListener('change', e => {
   if (!shot) return;
   const a = e.target.dataset.amz;
   if (a && shot.amazon) { if (e.target.type === 'date' && !e.target.value) return renderShot(); shot.amazon[a] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; return renderShot(); }
+  if (e.target.matches('[data-amzmissing]')) { try { localStorage.setItem('aipa.amzOnlyMissing', e.target.checked ? '1' : '0'); } catch {} return renderShot(); }
   if (e.target.matches('[data-shotfile]')) { addShotFiles(e.target.files); renderShot(); }
   else updateShotItem(e.target);
 });

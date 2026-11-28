@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.61.0
+- **Amazon import: "Only show filament not already in my library".** A checkbox above the list of filament found in
+  your Amazon orders hides the rows already in your library (added from that order before, or probably added by
+  hand), so filament missed by earlier imports is easy to find. It says how many are hidden, and the app remembers
+  whether it's on. Hidden rows are never added. Also on the list from the daily Amazon check.
+
 ## 2.60.1
 - **Fixed: very detailed models looked see-through in the 3D view** (speckled, like scattered dots, such as the
   Japandi Rentier with 3 million triangles). For models over 1.5 million triangles the view showed only every 2nd or
